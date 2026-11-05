@@ -1,0 +1,16 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Environment / secrets
+.env
+
+# Local docs
+docs/
+
+# Agent tooling
+.agents/
+.claude/
+skills-lock.json
+.10x-cli.json
