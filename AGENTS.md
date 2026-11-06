@@ -11,7 +11,7 @@ The product is defined in `context/`. Read these before you implement anything:
 
 `docs/` is gitignored and holds the original recruitment assignment, including the sample data (customers, invoices, KB articles, tickets). **The assignment text must never be committed.** Copy the sample data into the repo in any form you like, but leave the instructions out.
 
-Hard deadline: 2026-11-07, with a budget of about 8 hours. Build only the must-have items FR-001–FR-012 until all of them pass. Start FR-013–FR-016 only after that. Locally, `docker compose` runs exactly three containers (Temporal with its web UI, API, worker). Add no database, queue or extra service. The described Azure deployment follows `context/foundation/infrastructure.md` instead (for example, the Temporal UI as a separate internal app, and PostgreSQL for Temporal).
+Hard deadline: 2026-11-07, with a budget of about 8 hours. Build only the must-have items FR-001–FR-012 until all of them pass. Start FR-013–FR-016 only after that. Locally, `docker compose up` must start at least the Temporal server, its web UI, the API and the worker (in fake LLM mode, no key). Supporting containers for Temporal itself (e.g. its persistence or a schema-setup step) are allowed. The application adds no database or queue of its own: ticket state lives in Temporal, and sample data stays as files in the repo. The described Azure deployment follows `context/foundation/infrastructure.md` instead (for example, the Temporal UI as a separate internal app, and PostgreSQL for Temporal).
 
 ## Commands
 

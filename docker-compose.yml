@@ -1,0 +1,46 @@
+# Local run: Temporal dev server (gRPC 7233, web UI 8233), the API (8000) and
+# the worker. Every setting has an inline default matching .env.example, so a
+# fresh clone runs with no .env, in fake LLM mode with no API key.
+
+x-app: &app
+  build: .
+  image: agentic-ticket-workflow:local
+  depends_on:
+    - temporal
+  restart: unless-stopped
+  environment:
+    TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal:7233}
+    TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
+    TEMPORAL_TASK_QUEUE: ${TEMPORAL_TASK_QUEUE:-tickets}
+    LLM_MODE: ${LLM_MODE:-fake}
+    LLM_BASE_URL: ${LLM_BASE_URL:-}
+    LLM_API_KEY: ${LLM_API_KEY:-}
+    LLM_MODEL: ${LLM_MODEL:-}
+    HELPDESK_FAILURE_RATE: ${HELPDESK_FAILURE_RATE:-0.3}
+    LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+services:
+  temporal:
+    image: temporalio/temporal:1.9.1
+    # start-dev creates the "default" namespace; the UI binds to --ip too.
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--db-filename", "/home/temporal/temporal.db"]
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+    volumes:
+      # /home/temporal is owned by the image's temporal user (uid 1000), so a
+      # new named volume inherits that ownership and SQLite can write to it.
+      - temporal-data:/home/temporal
+    restart: unless-stopped
+
+  api:
+    <<: *app
+    ports:
+      - "8000:8000"
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "agentic_ticket_workflow.worker"]
+
+volumes:
+  temporal-data:
