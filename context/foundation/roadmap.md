@@ -1,7 +1,7 @@
 ---
 project: "Northdesk Agentic Ticket Workflow"
 version: 1
-status: draft                    # draft | active | locked
+status: active                   # draft | active | locked
 created: 2026-11-06
 updated: 2026-11-06
 prd_version: 1
@@ -41,7 +41,7 @@ Northdesk's support team triages every ticket by hand. That means repetitive wor
 
 | ID   | Change ID                   | Outcome (user can …)                                                                                     | Prerequisites | PRD refs                                                | Status   | Issue |
 | ---- | --------------------------- | -------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------- | -------- | ----- |
-| S-01 | first-ticket-answered       | Support agent can submit T-1, get its ID at once, and read its step, decision and KB-1 reply             | —             | US-01, FR-001, FR-002, FR-003, FR-004, FR-009, FR-011   | in-progress | [#1](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/1) |
+| S-01 | first-ticket-answered       | Support agent can submit T-1, get its ID at once, and read its step, decision and KB-1 reply             | —             | US-01, FR-001, FR-002, FR-003, FR-004, FR-009, FR-011   | done     | [#1](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/1) |
 | S-02 | ticket-traceable-in-logs    | Operator can follow one ticket through API, workflow and activity logs by ticket ID and workflow ID      | S-01          | FR-010                                                  | proposed | [#2](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/2) |
 | S-03 | example-tickets-triaged     | Support agent sees T-3, T-4, T-5 get their expected decisions and T-7 escalated as `unknown_customer`    | S-01          | FR-004, FR-008, FR-009                                  | proposed | [#3](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/3) |
 | S-04 | injection-escalated         | Support agent sees T-6's rule-breaking refund turned into an escalation naming the broken rule           | S-01          | US-03, FR-005, FR-011                                   | proposed | [#4](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/4) |
@@ -93,7 +93,7 @@ None. The deploy layer is present, and each missing cross-cutting piece is intro
   - Does the workflow engine's time-skipping test environment download a test-server binary on first run? If so, how is FR-011's "no network" kept (cached or pre-fetched binary)? — Owner: team. Block: no.
   - The fake model must stay simple and rule-based (FR-009) while still producing the expected-outcomes table. Decide its rule shape here, so S-03/S-04 only add rules. — Owner: team. Block: no.
 - **Risk:** It carries the most wiring of any slice (intake, workflow, tool loop, helpdesk, status, test harness), but splitting it by layer would leave nothing working if time runs out. It is the north star, so it goes first.
-- **Status:** in-progress
+- **Status:** done
 
 ### S-02: Ticket traceable in logs
 
@@ -104,7 +104,7 @@ None. The deploy layer is present, and each missing cross-cutting piece is intro
 - **Parallel with:** S-03, S-04, S-05, S-06, S-07, S-08
 - **Blockers:** —
 - **Unknowns:** —
-- **Risk:** Sequenced right after S-01, so later slices log through the same helper and don't need a retrofit. Risk: log calls inside workflow code must stay replay-safe.
+- **Risk:** Sequenced right after S-01, so later slices log through the same helper and don't need a retrofit. Risk: log calls inside workflow code must stay replay-safe. Carry-over from the S-01 review (F8): read `LOG_LEVEL`. It is set in compose and `.env.example`, but `worker.py` hardcodes INFO and the API configures no logging. Follow the lesson "Ticket text hides in derived payloads": never log `tool_calls`, decisions or model-text errors verbatim.
 - **Status:** proposed
 
 ### S-03: Remaining example tickets triaged
@@ -178,7 +178,7 @@ None. The deploy layer is present, and each missing cross-cutting piece is intro
 - **Blockers:** —
 - **Unknowns:**
   - Which provider, and is a key available for a manual smoke run? `.env.example` already implies an OpenAI-compatible base URL, key and model. Without a key, this slice ships verified only against the fake and a stubbed provider. — Owner: user. Block: no.
-- **Risk:** Follows S-04, so real-model output never reaches the helpdesk unchecked. It is placed late under `speed` because the default demo and all tests run in fake mode.
+- **Risk:** Follows S-04, so real-model output never reaches the helpdesk unchecked. Carry-over from the S-01 review (F8): the API calls `Settings.from_env()`, which rejects any `LLM_MODE` other than `fake`, so the API won't start in real mode until that check moves to the worker (or is replaced). It is placed late under `speed` because the default demo and all tests run in fake mode.
 - **Status:** proposed
 
 ### S-09: Reviewer-ready README
@@ -197,13 +197,13 @@ None. The deploy layer is present, and each missing cross-cutting piece is intro
 
 | Roadmap ID | Change ID                   | Suggested issue title                                              | Ready for `/10x-plan` | Notes                               |
 | ---------- | --------------------------- | ------------------------------------------------------------------ | --------------------- | ----------------------------------- |
-| S-01       | first-ticket-answered       | T-1 answered end-to-end in fake-LLM mode (intake, status, tool loop) | yes                   | Run `/10x-plan first-ticket-answered` |
-| S-02       | ticket-traceable-in-logs    | JSON-line logs with ticket_id + workflow_id across API/workflow/activities | no              | After S-01                          |
-| S-03       | example-tickets-triaged     | T-3/T-4/T-5 decisions + T-7 unknown_customer before the model       | no                    | After S-01                          |
-| S-04       | injection-escalated         | Decision rule checks; T-6 refund escalates with the broken rule     | no                    | After S-01                          |
+| S-01       | first-ticket-answered       | T-1 answered end-to-end in fake-LLM mode (intake, status, tool loop) | done                  | Archived 2026-11-06 (PR #14)        |
+| S-02       | ticket-traceable-in-logs    | JSON-line logs with ticket_id + workflow_id across API/workflow/activities | yes | Run `/10x-plan ticket-traceable-in-logs` |
+| S-03       | example-tickets-triaged     | T-3/T-4/T-5 decisions + T-7 unknown_customer before the model       | yes | Run `/10x-plan example-tickets-triaged` |
+| S-04       | injection-escalated         | Decision rule checks; T-6 refund escalates with the broken rule     | yes | Run `/10x-plan injection-escalated` |
 | S-05       | refund-approved-or-rejected | T-2 refund waits for approve/reject; 404/409; refund exactly once   | no                    | After S-04                          |
 | S-06       | refund-timeout-escalated    | 24 h approval timeout escalates; late approval refused             | no                    | After S-05                          |
-| S-07       | failures-end-cleanly        | Bounded retries; helpdesk_unavailable / unreadable_model_answer / llm_unavailable | no      | After S-01                          |
+| S-07       | failures-end-cleanly        | Bounded retries; helpdesk_unavailable / unreadable_model_answer / llm_unavailable | yes | Run `/10x-plan failures-end-cleanly` |
 | S-08       | real-llm-provider           | Real LLM provider switchable by env setting                        | no                    | After S-04; key availability open   |
 | S-09       | reviewer-readme-complete    | README covers the full FR-012 checklist                            | no                    | Last; closes the milestone          |
 
@@ -234,3 +234,5 @@ None. The deploy layer is present, and each missing cross-cutting piece is intro
 ## Milestone History
 
 ## Done
+
+- **S-01: Support agent can submit ticket T-1 and get its ID back at once. Processing continues in the background: the fake model looks things up through the tool loop (`get_customer`, `get_invoices`, `search_kb`) and decides `account` / `normal` / `reply` citing KB-1. The reply is sent to the fake helpdesk exactly once, even with temporary helpdesk failures switched on (bounded retries plus an idempotency key). The agent can read the ticket's current step, decision and final result at any time. Resubmitting the same ticket ID returns the existing processing, including when that ticket has already finished or failed, so its action is never repeated. `docker compose up` brings this up with no API key, and the single test command runs a time-skipped workflow test for an answered ticket plus one HTTP API test.** — Archived 2026-11-06 → `context/archive/2026-11-06-first-ticket-answered/`. Lesson: —.

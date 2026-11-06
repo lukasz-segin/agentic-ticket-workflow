@@ -1,10 +1,10 @@
 ---
 change_id: first-ticket-answered
 title: First ticket answered end-to-end (S-01, T-1 in fake LLM mode)
-status: impl_reviewed
+status: archived
 created: 2026-11-06
 updated: 2026-11-06
-archived_at: null
+archived_at: 2026-11-06T22:51:26Z
 ---
 
 ## Notes
