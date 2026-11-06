@@ -41,7 +41,7 @@ Northdesk's support team triages every ticket by hand. That means repetitive wor
 
 | ID   | Change ID                   | Outcome (user can …)                                                                                     | Prerequisites | PRD refs                                                | Status   | Issue |
 | ---- | --------------------------- | -------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------- | -------- | ----- |
-| S-01 | first-ticket-answered       | Support agent can submit T-1, get its ID at once, and read its step, decision and KB-1 reply             | —             | US-01, FR-001, FR-002, FR-003, FR-004, FR-009, FR-011   | ready    | [#1](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/1) |
+| S-01 | first-ticket-answered       | Support agent can submit T-1, get its ID at once, and read its step, decision and KB-1 reply             | —             | US-01, FR-001, FR-002, FR-003, FR-004, FR-009, FR-011   | in-progress | [#1](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/1) |
 | S-02 | ticket-traceable-in-logs    | Operator can follow one ticket through API, workflow and activity logs by ticket ID and workflow ID      | S-01          | FR-010                                                  | proposed | [#2](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/2) |
 | S-03 | example-tickets-triaged     | Support agent sees T-3, T-4, T-5 get their expected decisions and T-7 escalated as `unknown_customer`    | S-01          | FR-004, FR-008, FR-009                                  | proposed | [#3](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/3) |
 | S-04 | injection-escalated         | Support agent sees T-6's rule-breaking refund turned into an escalation naming the broken rule           | S-01          | US-03, FR-005, FR-011                                   | proposed | [#4](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/4) |
@@ -93,7 +93,7 @@ None. The deploy layer is present, and each missing cross-cutting piece is intro
   - Does the workflow engine's time-skipping test environment download a test-server binary on first run? If so, how is FR-011's "no network" kept (cached or pre-fetched binary)? — Owner: team. Block: no.
   - The fake model must stay simple and rule-based (FR-009) while still producing the expected-outcomes table. Decide its rule shape here, so S-03/S-04 only add rules. — Owner: team. Block: no.
 - **Risk:** It carries the most wiring of any slice (intake, workflow, tool loop, helpdesk, status, test harness), but splitting it by layer would leave nothing working if time runs out. It is the north star, so it goes first.
-- **Status:** ready
+- **Status:** in-progress
 
 ### S-02: Ticket traceable in logs
 
