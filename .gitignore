@@ -12,5 +12,6 @@ docs/
 # Agent tooling
 .agents/
 .claude/
+.gemini/
 skills-lock.json
 .10x-cli.json

@@ -21,7 +21,7 @@ The project uses uv on Python 3.14, with a src layout and the `uv_build` backend
 uv run agentic-ticket-workflow   # console script -> agentic_ticket_workflow:main
 ```
 
-**Test command:** not set yet. When you add tests, record the command here. All tests must run with that one command, with no network and no API key (FR-011).
+**Test command:** `uv run pytest` (all tests; no network and no API key, FR-011). The first run downloads Temporal's test server once and caches it.
 
 ## Target architecture
 

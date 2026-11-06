@@ -8,6 +8,8 @@ x-app: &app
   depends_on:
     - temporal
   restart: unless-stopped
+  # tini as PID 1 forwards SIGTERM; a bare Python PID 1 ignores it and is SIGKILLed after 10 s.
+  init: true
   environment:
     TEMPORAL_ADDRESS: ${TEMPORAL_ADDRESS:-temporal:7233}
     TEMPORAL_NAMESPACE: ${TEMPORAL_NAMESPACE:-default}
