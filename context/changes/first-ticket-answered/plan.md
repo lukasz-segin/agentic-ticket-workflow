@@ -464,25 +464,25 @@ None. There is no existing data or deployment.
 
 #### Automated
 
-- [x] 1.1 Dependencies lock cleanly: `uv lock --check`
-- [x] 1.2 Unit tests pass: `uv run pytest`
-- [x] 1.3 The core has no framework imports (grep returns nothing)
+- [x] 1.1 Dependencies lock cleanly: `uv lock --check` — ecd21d9
+- [x] 1.2 Unit tests pass: `uv run pytest` — ecd21d9
+- [x] 1.3 The core has no framework imports (grep returns nothing) — ecd21d9
 
 #### Manual
 
-- [x] 1.4 Data JSON files contain only the four arrays, no assignment prose
-- [x] 1.5 The `RULES` table reads as simple and rule-based
+- [x] 1.4 Data JSON files contain only the four arrays, no assignment prose — ecd21d9
+- [x] 1.5 The `RULES` table reads as simple and rule-based — ecd21d9
 
 ### Phase 2: Temporal Workflow, Activities and Worker
 
 #### Automated
 
-- [ ] 2.1 All tests pass (unit + workflow): `uv run pytest`
-- [ ] 2.2 The worker module imports cleanly
+- [x] 2.1 All tests pass (unit + workflow): `uv run pytest`
+- [x] 2.2 The worker module imports cleanly
 
 #### Manual
 
-- [ ] 2.3 A T-1 workflow started against a local Temporal completes, with `decide` and `act` in its history
+- [x] 2.3 A T-1 workflow started against a local Temporal completes, with `decide` and `act` in its history
 
 ### Phase 3: HTTP API, Compose Smoke Run and README Notes
 
