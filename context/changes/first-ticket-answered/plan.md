@@ -488,12 +488,12 @@ None. There is no existing data or deployment.
 
 #### Automated
 
-- [x] 3.1 All tests pass: `uv run pytest`
-- [x] 3.2 The image builds: `docker compose build`
+- [x] 3.1 All tests pass: `uv run pytest` — 6a58cc6
+- [x] 3.2 The image builds: `docker compose build` — 6a58cc6
 
 #### Manual
 
-- [x] 3.3 `docker compose up`: POST T-1 returns 202, GET shows completed with the KB-1 reply and a helpdesk ref
-- [x] 3.4 Resubmit returns 200 `created:false`, with a single execution in the Temporal UI
-- [x] 3.5 At 30 % failure rate, `act` retries are visible and the action is recorded once
-- [x] 3.6 Retention value confirmed and written into the README limitation note
+- [x] 3.3 `docker compose up`: POST T-1 returns 202, GET shows completed with the KB-1 reply and a helpdesk ref — 6a58cc6
+- [x] 3.4 Resubmit returns 200 `created:false`, with a single execution in the Temporal UI — 6a58cc6
+- [x] 3.5 At 30 % failure rate, `act` retries are visible and the action is recorded once — 6a58cc6
+- [x] 3.6 Retention value confirmed and written into the README limitation note — 6a58cc6
