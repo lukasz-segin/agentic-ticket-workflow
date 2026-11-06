@@ -39,17 +39,17 @@ Northdesk's support team triages every ticket by hand. That means repetitive wor
 
 ## At a glance
 
-| ID   | Change ID                   | Outcome (user can …)                                                                                     | Prerequisites | PRD refs                                                | Status   |
-| ---- | --------------------------- | -------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------- | -------- |
-| S-01 | first-ticket-answered       | Support agent can submit T-1, get its ID at once, and read its step, decision and KB-1 reply             | —             | US-01, FR-001, FR-002, FR-003, FR-004, FR-009, FR-011   | ready    |
-| S-02 | ticket-traceable-in-logs    | Operator can follow one ticket through API, workflow and activity logs by ticket ID and workflow ID      | S-01          | FR-010                                                  | proposed |
-| S-03 | example-tickets-triaged     | Support agent sees T-3, T-4, T-5 get their expected decisions and T-7 escalated as `unknown_customer`    | S-01          | FR-004, FR-008, FR-009                                  | proposed |
-| S-04 | injection-escalated         | Support agent sees T-6's rule-breaking refund turned into an escalation naming the broken rule           | S-01          | US-03, FR-005, FR-011                                   | proposed |
-| S-05 | refund-approved-or-rejected | Support agent can approve or reject T-2's waiting refund; an approved refund is issued exactly once      | S-04          | US-02, FR-006, FR-007, FR-011                           | proposed |
-| S-06 | refund-timeout-escalated    | Support agent sees an unanswered refund escalated after 24 h, and a late approval refused                | S-05          | US-04, FR-006, FR-011                                   | proposed |
-| S-07 | failures-end-cleanly        | Support agent sees every ticket reach a final state under helpdesk/LLM failures, with a clear reason     | S-01          | FR-007, FR-008, FR-011                                  | proposed |
-| S-08 | real-llm-provider           | Reviewer can switch from the fake model to a real LLM provider with a setting                            | S-04          | FR-004, FR-009                                          | proposed |
-| S-09 | reviewer-readme-complete    | Reviewer can learn from the README how to run, call, test, understand and deploy the service             | S-02, S-03, S-06, S-07, S-08 | FR-012                                   | proposed |
+| ID   | Change ID                   | Outcome (user can …)                                                                                     | Prerequisites | PRD refs                                                | Status   | Issue |
+| ---- | --------------------------- | -------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------- | -------- | ----- |
+| S-01 | first-ticket-answered       | Support agent can submit T-1, get its ID at once, and read its step, decision and KB-1 reply             | —             | US-01, FR-001, FR-002, FR-003, FR-004, FR-009, FR-011   | ready    | [#1](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/1) |
+| S-02 | ticket-traceable-in-logs    | Operator can follow one ticket through API, workflow and activity logs by ticket ID and workflow ID      | S-01          | FR-010                                                  | proposed | [#2](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/2) |
+| S-03 | example-tickets-triaged     | Support agent sees T-3, T-4, T-5 get their expected decisions and T-7 escalated as `unknown_customer`    | S-01          | FR-004, FR-008, FR-009                                  | proposed | [#3](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/3) |
+| S-04 | injection-escalated         | Support agent sees T-6's rule-breaking refund turned into an escalation naming the broken rule           | S-01          | US-03, FR-005, FR-011                                   | proposed | [#4](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/4) |
+| S-05 | refund-approved-or-rejected | Support agent can approve or reject T-2's waiting refund; an approved refund is issued exactly once      | S-04          | US-02, FR-006, FR-007, FR-011                           | proposed | [#5](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/5) |
+| S-06 | refund-timeout-escalated    | Support agent sees an unanswered refund escalated after 24 h, and a late approval refused                | S-05          | US-04, FR-006, FR-011                                   | proposed | [#6](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/6) |
+| S-07 | failures-end-cleanly        | Support agent sees every ticket reach a final state under helpdesk/LLM failures, with a clear reason     | S-01          | FR-007, FR-008, FR-011                                  | proposed | [#7](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/7) |
+| S-08 | real-llm-provider           | Reviewer can switch from the fake model to a real LLM provider with a setting                            | S-04          | FR-004, FR-009                                          | proposed | [#8](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/8) |
+| S-09 | reviewer-readme-complete    | Reviewer can learn from the README how to run, call, test, understand and deploy the service             | S-02, S-03, S-06, S-07, S-08 | FR-012                                   | proposed | [#9](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/9) |
 
 ## Streams
 
@@ -217,10 +217,10 @@ None. The deploy layer is present, and each missing cross-cutting piece is intro
 
 ## Parked
 
-- **FR-013: tests on every push (CI)** — Why parked: nice-to-have; AGENTS.md says start FR-013–FR-016 only after FR-001–FR-012 pass. It is the first candidate for the next milestone (PRD: "first extra to do if time allows").
-- **FR-014: one trace per ticket across API, workflow and activities** — Why parked: nice-to-have; overlaps FR-010 (S-02).
-- **FR-015: infrastructure-as-code for the described Azure deployment** — Why parked: nice-to-have; it must match the README's Azure section exactly.
-- **FR-016: real-vs-fake decision comparison** — Why parked: nice-to-have; needs a real provider key and a manual run (after S-08).
+- **FR-013: tests on every push (CI)** ([#10](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/10)) — Why parked: nice-to-have; AGENTS.md says start FR-013–FR-016 only after FR-001–FR-012 pass. It is the first candidate for the next milestone (PRD: "first extra to do if time allows").
+- **FR-014: one trace per ticket across API, workflow and activities** ([#11](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/11)) — Why parked: nice-to-have; overlaps FR-010 (S-02).
+- **FR-015: infrastructure-as-code for the described Azure deployment** ([#12](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/12)) — Why parked: nice-to-have; it must match the README's Azure section exactly.
+- **FR-016: real-vs-fake decision comparison** ([#13](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/13)) — Why parked: nice-to-have; needs a real provider key and a manual run (after S-08).
 - **Real helpdesk, payment system or money movement** — Why parked: PRD §Non-Goals.
 - **Real customer database / data editing or import** — Why parked: PRD §Non-Goals; sample data stays as files in the repo.
 - **UI or agent dashboard** — Why parked: PRD §Non-Goals; API plus the workflow engine's web UI only.
