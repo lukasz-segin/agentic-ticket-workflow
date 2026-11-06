@@ -65,3 +65,28 @@ def test_step_limit_raises_unreadable(tickets):
 def test_unparseable_decision_raises_unreadable(tickets):
     with pytest.raises(UnreadableModelAnswer):
         decide(tickets["T-1"], NotJsonModel())
+
+
+class BadToolCallModel:
+    def __init__(self, call):
+        self.call = call
+
+    def complete(self, messages, tools):
+        return {"role": "assistant", "content": None, "tool_calls": [self.call]}
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        {"id": "c1", "type": "function", "function": {"name": "search_kb", "arguments": '{"query": 123}'}},
+        {"type": "function", "function": {"name": "search_kb", "arguments": '{"query": "password"}'}},
+        {"id": "c1", "type": "function"},
+        {"id": "c1", "type": "function", "function": {"name": "SECRET TICKET TEXT", "arguments": "{}"}},
+    ],
+    ids=["non-string-argument", "missing-id", "missing-function", "unknown-tool"],
+)
+def test_bad_tool_call_raises_unreadable_without_echoing_model_text(tickets, call):
+    with pytest.raises(UnreadableModelAnswer) as caught:
+        decide(tickets["T-1"], BadToolCallModel(call))
+    assert caught.value.__cause__ is None
+    assert "SECRET" not in str(caught.value)

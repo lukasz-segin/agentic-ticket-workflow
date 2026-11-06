@@ -1,11 +1,12 @@
 """HTTP layer (FR-001…FR-003): start or find a ticket's workflow and read its status."""
 
+import logging
 from contextlib import asynccontextmanager
 from datetime import timedelta
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from pydantic import BaseModel
-from temporalio.client import Client, WorkflowExecutionStatus
+from temporalio.client import Client, WorkflowExecutionStatus, WorkflowQueryFailedError
 from temporalio.common import WorkflowIDReusePolicy
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.exceptions import WorkflowAlreadyStartedError
@@ -14,6 +15,18 @@ from temporalio.service import RPCError, RPCStatusCode
 from agentic_ticket_workflow.config import Settings
 from agentic_ticket_workflow.models import Ticket, TicketStatus
 from agentic_ticket_workflow.workflow import TicketWorkflow, workflow_id_for
+
+log = logging.getLogger(__name__)
+
+# Temporal errors a later call may get past: the client answers 503 instead of 500.
+_UNAVAILABLE = {RPCStatusCode.UNAVAILABLE, RPCStatusCode.DEADLINE_EXCEEDED}
+
+
+def _temporal_unavailable(ticket_id: str, workflow_id: str, err: Exception) -> HTTPException:
+    log.warning(
+        "temporal unavailable ticket_id=%s workflow_id=%s error=%s", ticket_id, workflow_id, type(err).__name__
+    )
+    return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "ticket service temporarily unavailable")
 
 
 class SubmitResponse(BaseModel):
@@ -58,18 +71,25 @@ async def submit_ticket(ticket: Ticket, request: Request, response: Response) ->
     except WorkflowAlreadyStartedError:
         response.status_code = status.HTTP_200_OK
         return SubmitResponse(ticket_id=ticket.ticket_id, workflow_id=workflow_id, created=False)
+    except RPCError as err:
+        if err.status in _UNAVAILABLE:
+            raise _temporal_unavailable(ticket.ticket_id, workflow_id, err) from err
+        raise
     return SubmitResponse(ticket_id=ticket.ticket_id, workflow_id=workflow_id, created=True)
 
 
 @app.get("/tickets/{ticket_id}", response_model=TicketView)
 async def get_ticket(ticket_id: str, request: Request) -> TicketView:
     client: Client = request.app.state.temporal_client
-    handle = client.get_workflow_handle_for(TicketWorkflow.run, workflow_id_for(ticket_id))
+    workflow_id = workflow_id_for(ticket_id)
+    handle = client.get_workflow_handle_for(TicketWorkflow.run, workflow_id)
     try:
-        description = await handle.describe()
+        description = await handle.describe(rpc_timeout=timedelta(seconds=5))
     except RPCError as err:
         if err.status == RPCStatusCode.NOT_FOUND:
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"ticket {ticket_id} not found") from err
+        if err.status in _UNAVAILABLE:
+            raise _temporal_unavailable(ticket_id, workflow_id, err) from err
         raise
 
     if description.status == WorkflowExecutionStatus.COMPLETED:
@@ -78,7 +98,7 @@ async def get_ticket(ticket_id: str, request: Request) -> TicketView:
     else:
         try:
             ticket_status = await handle.query(TicketWorkflow.status, rpc_timeout=timedelta(seconds=2))
-        except Exception as err:  # no worker, query timeout or a query failure
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "ticket status unavailable") from err
+        except (WorkflowQueryFailedError, RPCError) as err:  # no worker, query timeout or a query failure
+            raise _temporal_unavailable(ticket_id, workflow_id, err) from err
 
     return TicketView(**ticket_status.model_dump(), status=description.status.name.lower())

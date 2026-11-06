@@ -4,7 +4,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
-NonEmpty = Annotated[str, Field(min_length=1)]
+# IDs become part of workflow IDs and helpdesk keys: keep them short and plain.
+Identifier = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
 
 Category = Literal["account", "billing", "technical", "other"]
 Priority = Literal["low", "normal", "high", "urgent"]
@@ -13,10 +14,11 @@ Step = Literal["received", "deciding", "acting", "done"]
 
 
 class Ticket(BaseModel):
-    ticket_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
-    customer_id: NonEmpty
-    subject: NonEmpty
-    body: NonEmpty
+    ticket_id: Identifier
+    customer_id: Identifier
+    # Bounded: the text is stored in Temporal history and, from S-08, sent to the model.
+    subject: Annotated[str, Field(min_length=1, max_length=200)]
+    body: Annotated[str, Field(min_length=1, max_length=10_000)]
 
 
 class ReplyAction(BaseModel):
@@ -54,6 +56,7 @@ class Decision(BaseModel):
 
 
 class ToolCall(BaseModel):
+    # Arguments may contain ticket text (search_kb's query is subject + body): never log them (FR-010).
     name: str
     arguments: dict[str, Any]
 

@@ -38,12 +38,22 @@ def test_full_failure_rate_raises():
 
 def test_failure_after_recording_then_retry_returns_recorded_result():
     # 1st call: fail roll (0.0 < rate), then "after recording" branch (0.9 >= 0.5).
-    helpdesk = FakeHelpdesk(0.5, rng=ScriptedRandom([0.0, 0.9]))
+    # Retry: roll passes (0.9 >= rate), the known key returns its recorded result.
+    helpdesk = FakeHelpdesk(0.5, rng=ScriptedRandom([0.0, 0.9, 0.9]))
     with pytest.raises(HelpdeskTemporaryError):
         helpdesk.perform(_request())
-    retried = helpdesk.perform(_request())  # known key: no roll, no new action
+    retried = helpdesk.perform(_request())  # known key: no new action
     assert len(helpdesk.performed) == 1
     assert retried.helpdesk_ref == "HD-1"
+
+
+def test_known_key_can_still_fail_without_acting_again():
+    helpdesk = FakeHelpdesk(0.0)
+    helpdesk.perform(_request())
+    helpdesk.failure_rate = 1.0
+    with pytest.raises(HelpdeskTemporaryError):
+        helpdesk.perform(_request())
+    assert len(helpdesk.performed) == 1
 
 
 def test_failure_before_recording_records_nothing():

@@ -1,8 +1,6 @@
 import uuid
 
-import pytest
 from temporalio import activity
-from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
@@ -22,14 +20,8 @@ from agentic_ticket_workflow.workflow import TicketWorkflow, workflow_id_for
 T1_REPLY = ReplyAction(message="Reset your password: ...", article_ids=["KB-1"])
 
 
-@pytest.fixture
-async def env():
-    async with await WorkflowEnvironment.start_time_skipping(data_converter=pydantic_data_converter) as env:
-        yield env
-
-
 async def run_ticket(env: WorkflowEnvironment, ticket: Ticket, decision: Decision):
-    """Run the workflow with fake decide/act activities; return (status, handle, act requests)."""
+    """Run the workflow with fake decide/act activities; return (final status, status queried after completion, act requests)."""
     act_calls: list[ActRequest] = []
 
     @activity.defn(name="decide")

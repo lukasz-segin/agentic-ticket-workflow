@@ -19,9 +19,13 @@ class FakeHelpdesk:
         self.performed: dict[str, ActionResult] = {}
 
     def perform(self, req: ActRequest) -> ActionResult:
-        if req.idempotency_key in self.performed:
-            return self.performed[req.idempotency_key]
         fails = self.rng.random() < self.failure_rate
+        known = self.performed.get(req.idempotency_key)
+        if known is not None:
+            # A repeat may also fail, but never performs the action again.
+            if fails:
+                raise HelpdeskTemporaryError("helpdesk unavailable (known key)")
+            return known
         # A failure may hit before or after the action is recorded, so retries also meet a known key.
         if fails and self.rng.random() < 0.5:
             raise HelpdeskTemporaryError("helpdesk unavailable (before recording)")
