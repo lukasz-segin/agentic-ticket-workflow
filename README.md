@@ -1,5 +1,47 @@
 # agentic-ticket-workflow
 
+## Run locally
+
+```sh
+docker compose up --build
+```
+
+This starts the Temporal dev server, the Temporal UI at <http://localhost:8233>, the API at <http://localhost:8000>, and the worker. No `.env` and no API key are needed: the model runs in fake mode (`LLM_MODE=fake`), and the fake helpdesk fails 30 % of calls (`HELPDESK_FAILURE_RATE=0.3`) so that you can see retries.
+
+Submit ticket T-1. The API answers `202` at once, and processing continues in the background:
+
+```sh
+curl -X POST localhost:8000/tickets -H 'content-type: application/json' --data-binary @- <<'EOF'
+{"ticket_id": "T-1", "customer_id": "C-200", "subject": "Can't log in",
+ "body": "I forgot my password and can't get into my account."}
+EOF
+# {"ticket_id":"T-1","workflow_id":"ticket-T-1","created":true}
+```
+
+Read its status, step, decision and result:
+
+```sh
+curl localhost:8000/tickets/T-1
+# {"status":"completed","step":"done","decision":{"category":"account","priority":"normal",
+#  "action":{"type":"reply","article_ids":["KB-1"],...}},"result":{...,"helpdesk_ref":"HD-1"},...}
+```
+
+Submitting the same `ticket_id` again returns `200` with `"created": false`, whether that ticket is still running or has already finished. The ticket is never processed twice. An unknown ID returns `404`. Open `ticket-T-1` in the Temporal UI to see the `decide` and `act` activities and any `act` retries.
+
+## Tests
+
+```sh
+uv run pytest
+```
+
+The tests need no network and no API key. The workflow and API tests use Temporal's time-skipping test server. The first run downloads that server once and caches it in the system temp folder, so later runs work offline.
+
+## Known limitations
+
+- **Duplicate detection lasts only as long as Temporal's retention period.** A resubmitted ticket ID returns the existing processing only while Temporal keeps that workflow. The `default` namespace keeps it for **24 h** after it closes. After that, the same ID starts a new workflow. Then only the fake helpdesk's idempotency keys stop the action from being repeated.
+- **The fake helpdesk keeps its idempotency keys in memory, per worker process.** They are lost when the worker restarts. They are also not shared between workers, so run exactly one worker. A second worker on the same task queue (e.g. one started with `uv run` beside compose) could perform a retried action again.
+- The API has no auth.
+
 ## Azure deployment
 
 > **Not deployed.** This section describes how the service would run on Azure Container Apps (ACA). Nothing in this repo creates Azure resources.

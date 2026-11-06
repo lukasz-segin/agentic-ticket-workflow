@@ -477,23 +477,23 @@ None. There is no existing data or deployment.
 
 #### Automated
 
-- [x] 2.1 All tests pass (unit + workflow): `uv run pytest`
-- [x] 2.2 The worker module imports cleanly
+- [x] 2.1 All tests pass (unit + workflow): `uv run pytest` — c7883d5
+- [x] 2.2 The worker module imports cleanly — c7883d5
 
 #### Manual
 
-- [x] 2.3 A T-1 workflow started against a local Temporal completes, with `decide` and `act` in its history
+- [x] 2.3 A T-1 workflow started against a local Temporal completes, with `decide` and `act` in its history — c7883d5
 
 ### Phase 3: HTTP API, Compose Smoke Run and README Notes
 
 #### Automated
 
-- [ ] 3.1 All tests pass: `uv run pytest`
-- [ ] 3.2 The image builds: `docker compose build`
+- [x] 3.1 All tests pass: `uv run pytest`
+- [x] 3.2 The image builds: `docker compose build`
 
 #### Manual
 
-- [ ] 3.3 `docker compose up`: POST T-1 returns 202, GET shows completed with the KB-1 reply and a helpdesk ref
-- [ ] 3.4 Resubmit returns 200 `created:false`, with a single execution in the Temporal UI
-- [ ] 3.5 At 30 % failure rate, `act` retries are visible and the action is recorded once
-- [ ] 3.6 Retention value confirmed and written into the README limitation note
+- [x] 3.3 `docker compose up`: POST T-1 returns 202, GET shows completed with the KB-1 reply and a helpdesk ref
+- [x] 3.4 Resubmit returns 200 `created:false`, with a single execution in the Temporal UI
+- [x] 3.5 At 30 % failure rate, `act` retries are visible and the action is recorded once
+- [x] 3.6 Retention value confirmed and written into the README limitation note
