@@ -324,14 +324,14 @@ One extra local activity round-trip per ticket. It reads cached packaged data. N
 
 #### Automated
 
-- [x] 2.1 Agent tests pass: `uv run pytest tests/test_agent.py`
-- [x] 2.2 End-to-end workflow tests pass: `uv run pytest tests/test_workflow.py`
-- [x] 2.3 Full suite passes: `uv run pytest`
-- [x] 2.4 Lint and format pass: `uv run ruff check` and `uv run ruff format --check`
+- [x] 2.1 Agent tests pass: `uv run pytest tests/test_agent.py` — 4ba47af
+- [x] 2.2 End-to-end workflow tests pass: `uv run pytest tests/test_workflow.py` — 4ba47af
+- [x] 2.3 Full suite passes: `uv run pytest` — 4ba47af
+- [x] 2.4 Lint and format pass: `uv run ruff check` and `uv run ruff format --check` — 4ba47af
 
 #### Manual
 
-- [x] 2.5 T-6 ends with `violation: "refund_amount_above_invoice"`, the 5000.0 proposal visible, and no refund issued
-- [x] 2.6 T-2 ends with `violation: null` and a `refund_needs_approval` escalation
-- [x] 2.7 T-6 worker logs carry the reason code and never the ticket body or amount
-- [x] 2.8 The `atw-s04` test project and its volume are removed with `docker compose -p atw-s04 down -v`
+- [x] 2.5 T-6 ends with `violation: "refund_amount_above_invoice"`, the 5000.0 proposal visible, and no refund issued — 4ba47af
+- [x] 2.6 T-2 ends with `violation: null` and a `refund_needs_approval` escalation — 4ba47af
+- [x] 2.7 T-6 worker logs carry the reason code and never the ticket body or amount — 4ba47af
+- [x] 2.8 The `atw-s04` test project and its volume are removed with `docker compose -p atw-s04 down -v` — 4ba47af
