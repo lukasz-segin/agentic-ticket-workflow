@@ -197,22 +197,22 @@ There is no versioning (see What We're NOT Doing). A refund already waiting in a
 
 #### Automated
 
-- [x] 1.1 The new workflow tests pass: `uv run pytest tests/test_workflow.py`
-- [x] 1.2 The whole suite passes, existing approval tests included: `uv run pytest`
-- [x] 1.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check`
+- [x] 1.1 The new workflow tests pass: `uv run pytest tests/test_workflow.py` — b3c709a
+- [x] 1.2 The whole suite passes, existing approval tests included: `uv run pytest` — b3c709a
+- [x] 1.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check` — b3c709a
 
 #### Manual
 
-- [x] 1.4 In compose, T-2 shows `approval_deadline` about 24 h ahead, and the Temporal UI shows the `approval_timeout` timer
+- [x] 1.4 In compose, T-2 shows `approval_deadline` about 24 h ahead, and the Temporal UI shows the `approval_timeout` timer — b3c709a
 
 ### Phase 2: HTTP late-approval test and README
 
 #### Automated
 
-- [ ] 2.1 The API test passes: `uv run pytest tests/test_api.py`
-- [ ] 2.2 The whole suite passes: `uv run pytest`
-- [ ] 2.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check`
+- [x] 2.1 The API test passes: `uv run pytest tests/test_api.py`
+- [x] 2.2 The whole suite passes: `uv run pytest`
+- [x] 2.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check`
 
 #### Manual
 
-- [ ] 2.4 The README sections read correctly, and no text still says the timeout is deferred to S-06
+- [x] 2.4 The README sections read correctly, and no text still says the timeout is deferred to S-06

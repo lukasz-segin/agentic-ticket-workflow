@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from types import SimpleNamespace
 
 import httpx
@@ -145,6 +146,29 @@ async def test_approval_refusals_through_the_api(env, tickets, monkeypatch):
 
     assert status.result.action == CloseAction(reason="refund_rejected")
     assert "ticket-T-2b:refund" not in acts.helpdesk.performed
+
+
+async def test_late_approval_through_the_api_is_refused(env, tickets, monkeypatch):
+    async with api_and_worker(env, monkeypatch) as (http, acts):
+        assert (await http.post("/tickets", json=tickets["T-2"].model_dump())).status_code == 202
+        waiting = await wait_for_step(http, "T-2", "awaiting_approval")
+        assert waiting["approval_deadline"] is not None
+
+        # Nobody answers. Skip explicitly: only handles from `start_workflow` skip time in `result()`.
+        handle = env.client.get_workflow_handle("ticket-T-2")
+        deadline = datetime.fromisoformat(waiting["approval_deadline"])
+        await env.sleep(deadline - await env.get_current_time(handle))
+        await handle.result()
+        late = await http.post("/tickets/T-2/approval", json={"approved": True, "approver": "Ann"})
+        assert late.status_code == 409
+        done = (await http.get("/tickets/T-2")).json()
+
+    assert done["status"] == "completed"
+    assert done["steps"][-3:] == ["awaiting_approval", "acting", "done"]
+    assert done["result"]["action"] == {"type": "escalate", "reason": "approval_timeout"}
+    assert done["approval"] is None
+    assert done["approval_deadline"] == waiting["approval_deadline"]
+    assert "ticket-T-2:refund" not in acts.helpdesk.performed
 
 
 class _RunningClient:
