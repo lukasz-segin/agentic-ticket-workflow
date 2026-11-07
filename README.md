@@ -57,7 +57,7 @@ Every decision is checked in plain Python (`src/agentic_ticket_workflow/rules.py
 | `refund_amount_above_invoice` | the refund amount is above the invoice amount |
 
 - **Allowed values** are named from the typed decision's parse errors, so the `Decision` schema stays the only list of them. `decide` is not retried for them, because asking again doesn't make an answer allowed. Other unreadable answers are not named this way.
-- **Refund rules** run after the model, in their own `check` step (an activity, so the workflow stays deterministic). They read the invoices from the data files, never from the model's tool results.
+- **Refund rules** run after the model, in their own `check` step (an activity, so the workflow stays deterministic). They read the invoices from the data files, never from the model's tool results. A proposed amount of NaN or infinity is kept and stopped like any other; JSON shows it as the string `"nan"` or `"inf"`.
 - A refund that passes every rule is still not issued by the workflow: it is escalated with `refund_needs_approval`, so a person decides.
 - Limits: a refund of an unpaid invoice passes the rules, and so does a refund of the same invoice in full from two tickets. The person who decides on the refund is the only guard there.
 

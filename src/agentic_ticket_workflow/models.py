@@ -1,8 +1,9 @@
 """Domain types shared by the agent loop, the workflow and the API. Pydantic only."""
 
+import math
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PlainSerializer
 
 # IDs become part of workflow IDs and helpdesk keys: keep them short and plain.
 IDENTIFIER_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
@@ -28,10 +29,18 @@ class ReplyAction(BaseModel):
     article_ids: list[str]
 
 
+def _json_float(value: float) -> float | str:
+    # Pydantic writes NaN and infinity as JSON null, which doesn't parse back as a float, so a model's
+    # NaN proposal could never cross Temporal to the rule check. As "nan" / "inf" / "-inf" they parse
+    # back to the same float, and the check names the broken rule. Set on the field, not the model's
+    # config, because that config only takes effect on the outermost model being serialized.
+    return value if math.isfinite(value) else str(value)
+
+
 class RefundAction(BaseModel):
     type: Literal["refund"] = "refund"
     invoice_id: str
-    amount_eur: float
+    amount_eur: Annotated[float, PlainSerializer(_json_float, when_used="json")]
 
 
 class EscalateAction(BaseModel):

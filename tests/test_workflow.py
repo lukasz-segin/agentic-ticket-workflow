@@ -1,4 +1,5 @@
 import json
+import math
 import uuid
 
 import pytest
@@ -109,6 +110,26 @@ async def test_refund_breaking_a_rule_is_escalated_with_the_rule(env, tickets):
     assert act_calls[0].idempotency_key == "ticket-T-6:escalate"
     assert status.result.action == EscalateAction(reason="refund_amount_above_invoice")
     assert queried == status
+
+
+@pytest.mark.parametrize(
+    ("amount", "code"),
+    [(math.nan, "refund_amount_not_positive"), (math.inf, "refund_amount_above_invoice")],
+)
+async def test_non_finite_refund_crosses_temporal_and_is_escalated(env, tickets, amount, code):
+    # Pydantic's default JSON for NaN/inf is null, which would strand the workflow before the check.
+    decision = Decision(
+        category="billing", priority="normal", action=RefundAction(invoice_id="INV-1002", amount_eur=amount)
+    )
+    status, queried, act_calls = await run_ticket(env, tickets["T-2"], decision)
+
+    assert status.steps == ["received", "deciding", "checking", "acting", "done"]
+    assert status.violation == code
+    proposed = status.decision.action.amount_eur
+    assert math.isnan(proposed) if math.isnan(amount) else proposed == amount
+    assert len(act_calls) == 1
+    assert act_calls[0].action == EscalateAction(reason=code)
+    assert queried.violation == code
 
 
 async def test_disallowed_value_escalates_without_a_decision_or_retry(env, tickets):
