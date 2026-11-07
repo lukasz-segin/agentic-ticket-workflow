@@ -229,26 +229,26 @@ This is local only: nothing is deployed, and the README's Azure section already 
 
 #### Automated
 
-- [x] 1.1 Workflow tests pass: `uv run pytest tests/test_workflow.py`
-- [x] 1.2 Full suite passes: `uv run pytest`
-- [x] 1.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check`
-- [x] 1.4 No placeholder left in code or tests: `grep -rn refund_needs_approval src tests` returns nothing
+- [x] 1.1 Workflow tests pass: `uv run pytest tests/test_workflow.py` — 3446387
+- [x] 1.2 Full suite passes: `uv run pytest` — 3446387
+- [x] 1.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check` — 3446387
+- [x] 1.4 No placeholder left in code or tests: `grep -rn refund_needs_approval src tests` returns nothing — 3446387
 
 #### Manual
 
-- [x] 1.5 Approved-refund test loses the response after recording, and the retry returns the same `HD-1` with exactly one refund
+- [x] 1.5 Approved-refund test loses the response after recording, and the retry returns the same `HD-1` with exactly one refund — 3446387
 
 ### Phase 2: Approval Endpoint and README
 
 #### Automated
 
-- [ ] 2.1 API tests pass: `uv run pytest tests/test_api.py`
-- [ ] 2.2 Full suite passes: `uv run pytest`
-- [ ] 2.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check`
+- [x] 2.1 API tests pass: `uv run pytest tests/test_api.py`
+- [x] 2.2 Full suite passes: `uv run pytest`
+- [x] 2.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check`
 
 #### Manual
 
-- [ ] 2.4 Compose: T-2 waits, approve → `done` with one refund despite 30% failures
-- [ ] 2.5 Compose: repeat approval 409, unknown 404, T-1 409
-- [ ] 2.6 Compose: rejecting a fresh refund ticket closes it with `refund_rejected: …` and no refund
-- [ ] 2.7 Approval log lines carry IDs, `approved` and `approver`, and no comment text
+- [x] 2.4 Compose: T-2 waits, approve → `done` with one refund despite 30% failures
+- [x] 2.5 Compose: repeat approval 409, unknown 404, T-1 409
+- [x] 2.6 Compose: rejecting a fresh refund ticket closes it with `refund_rejected: …` and no refund
+- [x] 2.7 Approval log lines carry IDs, `approved` and `approver`, and no comment text
