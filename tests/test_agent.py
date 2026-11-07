@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from agentic_ticket_workflow.agent import UnreadableModelAnswer, decide
+from agentic_ticket_workflow.agent import UnknownCustomer, UnreadableModelAnswer, decide
 from agentic_ticket_workflow.fake_llm import FakeChatModel
 from agentic_ticket_workflow.models import Ticket
 
@@ -91,6 +91,17 @@ def test_refund_tickets_match_no_rule_yet(tickets, ticket_id):
     result = decide(tickets[ticket_id], FakeChatModel())
     assert result.decision.action.type == "escalate"
     assert result.decision.action.reason == "no_matching_rule"
+
+
+class MustNotBeCalledModel:
+    def complete(self, messages, tools):
+        pytest.fail("the model was consulted for an unknown customer")
+
+
+def test_unknown_customer_is_detected_before_the_model(tickets):
+    with pytest.raises(UnknownCustomer) as caught:
+        decide(tickets["T-7"], MustNotBeCalledModel())
+    assert "C-999" not in str(caught.value)
 
 
 def test_step_limit_raises_unreadable(tickets):

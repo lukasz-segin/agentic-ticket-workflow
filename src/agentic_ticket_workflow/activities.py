@@ -4,11 +4,13 @@ import asyncio
 import logging
 
 from temporalio import activity
+from temporalio.exceptions import ApplicationError
 
 from agentic_ticket_workflow import agent
 from agentic_ticket_workflow.agent import ChatModel
 from agentic_ticket_workflow.helpdesk import FakeHelpdesk
 from agentic_ticket_workflow.models import ActionResult, ActRequest, DecideResult, Ticket
+from agentic_ticket_workflow.workflow import UNKNOWN_CUSTOMER
 
 # The SDK adapter adds a `temporal_activity` extra (IDs, attempt); the formatter reads it.
 log = activity.LoggerAdapter(logging.getLogger("agentic_ticket_workflow.activities"), None)
@@ -23,7 +25,12 @@ class TicketActivities:
     @activity.defn(name="decide")
     async def decide(self, ticket: Ticket) -> DecideResult:
         # The model call may block (a real provider in S-08), so keep it off the event loop.
-        result = await asyncio.to_thread(agent.decide, ticket, self.model)
+        try:
+            result = await asyncio.to_thread(agent.decide, ticket, self.model)
+        except agent.UnknownCustomer:
+            log.info("unknown customer", extra={"reason_code": UNKNOWN_CUSTOMER})
+            # Non-retryable: a retry can't create the customer. The type is the workflow's reason code.
+            raise ApplicationError("customer not found", type=UNKNOWN_CUSTOMER, non_retryable=True) from None
         log.info("model decided", extra={"tools": [call.name for call in result.tool_calls]})
         return result
 

@@ -198,25 +198,25 @@ Three rules are appended to `RULES`, and the fake model's KB query adds the cust
 
 #### Automated
 
-- [x] 1.1 Agent tests pass: `uv run pytest tests/test_agent.py`
-- [x] 1.2 Full suite passes: `uv run pytest`
-- [x] 1.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check`
+- [x] 1.1 Agent tests pass: `uv run pytest tests/test_agent.py` — e9907db
+- [x] 1.2 Full suite passes: `uv run pytest` — e9907db
+- [x] 1.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check` — e9907db
 
 #### Manual
 
-- [x] 1.4 Reading `RULES` with the docstring still reads as "simple and rule-based" (FR-009): no ticket IDs and no article IDs in the rules
-- [x] 1.5 The README's `### Fake model` note matches `RULES` and states the limits
+- [x] 1.4 Reading `RULES` with the docstring still reads as "simple and rule-based" (FR-009): no ticket IDs and no article IDs in the rules — e9907db
+- [x] 1.5 The README's `### Fake model` note matches `RULES` and states the limits — e9907db
 
 ### Phase 2: Unknown customer escalated before the model
 
 #### Automated
 
-- [ ] 2.1 Agent and workflow tests pass: `uv run pytest tests/test_agent.py tests/test_workflow.py`
-- [ ] 2.2 Full suite passes: `uv run pytest`
-- [ ] 2.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check`
+- [x] 2.1 Agent and workflow tests pass: `uv run pytest tests/test_agent.py tests/test_workflow.py`
+- [x] 2.2 Full suite passes: `uv run pytest`
+- [x] 2.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check`
 
 #### Manual
 
-- [ ] 2.4 After `docker compose up`, `POST /tickets` with T-3, T-4, T-5 and T-7 from `src/agentic_ticket_workflow/data/tickets.json`; `GET /tickets/{id}` shows the outcomes in the Desired End State table
-- [ ] 2.5 In the Temporal UI, T-7's `decide` activity ran exactly one attempt, and the workflow completed rather than failed
-- [ ] 2.6 The worker logs for T-7 show `reason_code=unknown_customer` with `ticket_id` and `workflow_id`, and no ticket body
+- [x] 2.4 After `docker compose up`, `POST /tickets` with T-3, T-4, T-5 and T-7 from `src/agentic_ticket_workflow/data/tickets.json`; `GET /tickets/{id}` shows the outcomes in the Desired End State table
+- [x] 2.5 In the Temporal UI, T-7's `decide` activity ran exactly one attempt, and the workflow completed rather than failed
+- [x] 2.6 The worker logs for T-7 show `reason_code=unknown_customer` with `ticket_id` and `workflow_id`, and no ticket body

@@ -2,12 +2,18 @@ import uuid
 
 import pytest
 from temporalio import activity
+from temporalio.client import WorkflowFailureError
+from temporalio.exceptions import ApplicationError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
+from agentic_ticket_workflow.activities import TicketActivities
+from agentic_ticket_workflow.fake_llm import FakeChatModel
+from agentic_ticket_workflow.helpdesk import FakeHelpdesk
 from agentic_ticket_workflow.models import (
     ActionResult,
     ActRequest,
+    CloseAction,
     DecideResult,
     Decision,
     EscalateAction,
@@ -21,14 +27,23 @@ from agentic_ticket_workflow.workflow import TicketWorkflow, ticket_id_from, wor
 T1_REPLY = ReplyAction(message="Reset your password: ...", article_ids=["KB-1"])
 
 
-async def run_ticket(env: WorkflowEnvironment, ticket: Ticket, decision: Decision):
-    """Run the workflow with fake decide/act activities.
+async def run_ticket(
+    env: WorkflowEnvironment,
+    ticket: Ticket,
+    decision: Decision | ApplicationError,
+    decide_calls: list[Ticket] | None = None,
+):
+    """Run the workflow with fake decide/act activities. An `ApplicationError` is raised by `decide`.
 
     Returns (final status, status queried after completion, act requests)."""
     act_calls: list[ActRequest] = []
 
     @activity.defn(name="decide")
-    async def fake_decide(_: Ticket) -> DecideResult:
+    async def fake_decide(t: Ticket) -> DecideResult:
+        if decide_calls is not None:
+            decide_calls.append(t)
+        if isinstance(decision, ApplicationError):
+            raise decision
         return DecideResult(decision=decision, tool_calls=[ToolCall(name="search_kb", arguments={"query": "x"})])
 
     @activity.defn(name="act")
@@ -73,6 +88,63 @@ async def test_refund_is_escalated_until_approval_exists(env, tickets):
     assert act_calls[0].idempotency_key == "ticket-T-1:escalate"
     assert status.decision.action.type == "refund"
     assert status.result.action == EscalateAction(reason="refund_needs_approval")
+
+
+async def test_unknown_customer_escalates_without_a_decision_or_retry(env, tickets):
+    decide_calls: list[Ticket] = []
+    error = ApplicationError("customer not found", type="unknown_customer", non_retryable=True)
+    status, _, act_calls = await run_ticket(env, tickets["T-7"], error, decide_calls)
+
+    assert len(decide_calls) == 1
+    assert status.step == "done"
+    assert status.steps == ["received", "deciding", "acting", "done"]
+    assert status.decision is None
+    assert status.tool_calls == []
+    assert len(act_calls) == 1
+    assert act_calls[0].action == EscalateAction(reason="unknown_customer")
+    assert act_calls[0].idempotency_key == "ticket-T-7:escalate"
+
+
+async def test_unlisted_activity_error_still_fails_the_workflow(env, tickets):
+    error = ApplicationError("boom", type="something_else", non_retryable=True)
+    with pytest.raises(WorkflowFailureError):
+        await run_ticket(env, tickets["T-1"], error)
+
+
+@pytest.mark.parametrize(
+    ("ticket_id", "action"),
+    [
+        ("T-3", EscalateAction(reason="possible_outage")),
+        ("T-5", CloseAction(reason="not_support_request")),
+        ("T-7", EscalateAction(reason="unknown_customer")),
+    ],
+)
+async def test_example_tickets_through_the_real_activities(env, tickets, ticket_id, action):
+    status = await run_real(env, tickets[ticket_id])
+    assert status.step == "done"
+    assert status.result.action == action
+    assert (status.decision is None) == (ticket_id == "T-7")
+
+
+async def test_t4_is_answered_with_kb4_through_the_real_activities(env, tickets):
+    status = await run_real(env, tickets["T-4"])
+    assert status.step == "done"
+    assert status.result.action.type == "reply"
+    assert status.result.action.article_ids == ["KB-4"]
+
+
+async def run_real(env: WorkflowEnvironment, ticket: Ticket):
+    """Run the workflow through the real activities: fake model, helpdesk that never fails."""
+    acts = TicketActivities(FakeChatModel(), FakeHelpdesk(0.0))
+    task_queue = str(uuid.uuid4())
+    async with Worker(
+        env.client, task_queue=task_queue, workflows=[TicketWorkflow], activities=[acts.decide, acts.act]
+    ):
+        status = await env.client.execute_workflow(
+            TicketWorkflow.run, ticket, id=workflow_id_for(ticket.ticket_id), task_queue=task_queue
+        )
+    assert len(acts.helpdesk.performed) == 1
+    return status
 
 
 @pytest.mark.parametrize(
