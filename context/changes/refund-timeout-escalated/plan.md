@@ -209,10 +209,10 @@ There is no versioning (see What We're NOT Doing). A refund already waiting in a
 
 #### Automated
 
-- [x] 2.1 The API test passes: `uv run pytest tests/test_api.py`
-- [x] 2.2 The whole suite passes: `uv run pytest`
-- [x] 2.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check`
+- [x] 2.1 The API test passes: `uv run pytest tests/test_api.py` — 9807912
+- [x] 2.2 The whole suite passes: `uv run pytest` — 9807912
+- [x] 2.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check` — 9807912
 
 #### Manual
 
-- [x] 2.4 The README sections read correctly, and no text still says the timeout is deferred to S-06
+- [x] 2.4 The README sections read correctly, and no text still says the timeout is deferred to S-06 — 9807912
