@@ -43,7 +43,7 @@ Northdesk's support team triages every ticket by hand. That means repetitive wor
 | ---- | --------------------------- | -------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------- | -------- | ----- |
 | S-01 | first-ticket-answered       | Support agent can submit T-1, get its ID at once, and read its step, decision and KB-1 reply             | —             | US-01, FR-001, FR-002, FR-003, FR-004, FR-009, FR-011   | done     | [#1](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/1) |
 | S-02 | ticket-traceable-in-logs    | Operator can follow one ticket through API, workflow and activity logs by ticket ID and workflow ID      | S-01          | FR-010                                                  | done        | [#2](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/2) |
-| S-03 | example-tickets-triaged     | Support agent sees T-3, T-4, T-5 get their expected decisions and T-7 escalated as `unknown_customer`    | S-01          | FR-004, FR-008, FR-009                                  | proposed | [#3](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/3) |
+| S-03 | example-tickets-triaged     | Support agent sees T-3, T-4, T-5 get their expected decisions and T-7 escalated as `unknown_customer`    | S-01          | FR-004, FR-008, FR-009                                  | in-progress | [#3](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/3) |
 | S-04 | injection-escalated         | Support agent sees T-6's rule-breaking refund turned into an escalation naming the broken rule           | S-01          | US-03, FR-005, FR-011                                   | proposed | [#4](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/4) |
 | S-05 | refund-approved-or-rejected | Support agent can approve or reject T-2's waiting refund; an approved refund is issued exactly once      | S-04          | US-02, FR-006, FR-007, FR-011                           | proposed | [#5](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/5) |
 | S-06 | refund-timeout-escalated    | Support agent sees an unanswered refund escalated after 24 h, and a late approval refused                | S-05          | US-04, FR-006, FR-011                                   | proposed | [#6](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/6) |
@@ -117,7 +117,7 @@ None. The deploy layer is present, and each missing cross-cutting piece is intro
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Mostly fake-model rules and the pre-model customer check. Risk: tuning the fake model to the examples so tightly that the README's "simple and rule-based" claim stops being honest (FR-009).
-- **Status:** proposed
+- **Status:** in-progress
 
 ### S-04: Prompt injection escalated by the rules
 

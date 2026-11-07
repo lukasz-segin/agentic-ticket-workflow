@@ -1,7 +1,9 @@
 """Keyword-rule fake model (FR-009): no network, no key, same message shape as a real model.
 
 It calls the tools in a fixed order, then picks the first rule whose keyword occurs in the
-ticket text. Later slices only append rules to RULES.
+ticket text. The KB query is the ticket text plus the customer's status from `get_customer`,
+so a suspended customer's question finds the suspended-account article. Later slices only
+append rules to RULES.
 """
 
 import json
@@ -21,7 +23,12 @@ class Rule:
     reason: str = "matched_rule"  # used by escalate / close rules
 
 
-RULES: tuple[Rule, ...] = (Rule(("password", "log in", "login"), "account", "normal", "reply"),)
+RULES: tuple[Rule, ...] = (
+    Rule(("password", "log in", "login"), "account", "normal", "reply"),
+    Rule(("outage", "errors", "down"), "technical", "urgent", "escalate", reason="possible_outage"),
+    Rule(("locked", "suspended"), "account", "high", "reply", needs_invoices=True),
+    Rule(("pizza", "lunch", "restaurant"), "other", "low", "close", reason="not_support_request"),
+)
 
 
 def _match(text: str) -> Rule | None:
@@ -66,7 +73,8 @@ class FakeChatModel:
         if rule and rule.needs_invoices and "get_invoices" not in results:
             return _tool_call("get_invoices", {"customer_id": ticket["customer_id"]})
         if "search_kb" not in results:
-            return _tool_call("search_kb", {"query": text})
+            status = (results["get_customer"] or {}).get("status", "")
+            return _tool_call("search_kb", {"query": f"{text} {status}"})
 
         decision = self._decision(rule, results["search_kb"])
         return {"role": "assistant", "content": decision.model_dump_json(), "tool_calls": None}
