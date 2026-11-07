@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from agentic_ticket_workflow.agent import UnknownCustomer, UnreadableModelAnswer, decide
+from agentic_ticket_workflow.agent import DisallowedValue, UnknownCustomer, UnreadableModelAnswer, decide
 from agentic_ticket_workflow.fake_llm import FakeChatModel
 from agentic_ticket_workflow.models import Ticket
 
@@ -85,12 +85,26 @@ def test_unmatched_ticket_escalates_with_no_matching_rule():
     assert result.decision.action.reason == "no_matching_rule"
 
 
-@pytest.mark.parametrize("ticket_id", ["T-2", "T-6"])
-def test_refund_tickets_match_no_rule_yet(tickets, ticket_id):
-    # The first matching rule wins: an S-03 keyword here would shadow S-04's refund rules.
+@pytest.mark.parametrize(
+    ("ticket_id", "amount"),
+    [
+        ("T-2", 49.0),  # no amount stated: the latest invoice's amount
+        ("T-6", 5000.0),  # the gullible fake believes the injected amount; the rules must stop it
+    ],
+)
+def test_refund_tickets_propose_a_refund_of_the_latest_invoice(tickets, ticket_id, amount):
     result = decide(tickets[ticket_id], FakeChatModel())
+    action = result.decision.action
+    assert (result.decision.category, result.decision.priority, action.type) == ("billing", "normal", "refund")
+    assert (action.invoice_id, action.amount_eur) == ("INV-1002", amount)
+    assert [call.name for call in result.tool_calls] == ["get_customer", "get_invoices", "search_kb"]
+
+
+def test_refund_for_a_customer_without_invoices_escalates_with_no_invoice():
+    ticket = Ticket(ticket_id="X-2", customer_id="C-200", subject="Refund", body="Please refund me.")
+    result = decide(ticket, FakeChatModel())
     assert result.decision.action.type == "escalate"
-    assert result.decision.action.reason == "no_matching_rule"
+    assert result.decision.action.reason == "no_invoice"
 
 
 class MustNotBeCalledModel:
@@ -112,6 +126,28 @@ def test_step_limit_raises_unreadable(tickets):
 def test_unparseable_decision_raises_unreadable(tickets):
     with pytest.raises(UnreadableModelAnswer):
         decide(tickets["T-1"], NotJsonModel())
+
+
+class AnswerModel:
+    def __init__(self, answer):
+        self.answer = answer
+
+    def complete(self, messages, tools):
+        return {"role": "assistant", "content": json.dumps(self.answer), "tool_calls": None}
+
+
+def test_disallowed_category_raises_with_the_rule_code_only(tickets):
+    answer = {"category": "SECRET MODEL TEXT", "priority": "normal", "action": {"type": "close", "reason": "x"}}
+    with pytest.raises(DisallowedValue) as caught:
+        decide(tickets["T-1"], AnswerModel(answer))
+    assert caught.value.code == "category_not_allowed"
+    assert caught.value.__cause__ is None
+    assert "SECRET" not in str(caught.value)
+
+
+def test_missing_action_is_still_unreadable(tickets):
+    with pytest.raises(UnreadableModelAnswer):
+        decide(tickets["T-1"], AnswerModel({"category": "account", "priority": "normal"}))
 
 
 class BadToolCallModel:

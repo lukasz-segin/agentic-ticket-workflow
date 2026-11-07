@@ -7,7 +7,7 @@ from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.worker import Worker
 
-from agentic_ticket_workflow.activities import TicketActivities
+from agentic_ticket_workflow.activities import TicketActivities, check
 from agentic_ticket_workflow.config import Settings
 from agentic_ticket_workflow.fake_llm import FakeChatModel
 from agentic_ticket_workflow.helpdesk import FakeHelpdesk
@@ -29,7 +29,7 @@ async def main() -> None:
         client,
         task_queue=settings.task_queue,
         workflows=[TicketWorkflow],
-        activities=[acts.decide, acts.act],
+        activities=[acts.decide, check, acts.act],
     )
     logging.getLogger("agentic_ticket_workflow.worker").info("worker started on task queue %s", settings.task_queue)
     await worker.run()

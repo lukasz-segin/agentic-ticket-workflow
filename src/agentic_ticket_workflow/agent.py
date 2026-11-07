@@ -5,6 +5,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
+from agentic_ticket_workflow import rules
 from agentic_ticket_workflow.models import DecideResult, Decision, Ticket, ToolCall
 from agentic_ticket_workflow.tools import TOOL_SCHEMAS, get_customer, run_tool
 
@@ -17,6 +18,15 @@ class ChatModel(Protocol):
 
 class UnreadableModelAnswer(Exception):
     """The model's answer can't be used: over the step limit, bad tool call or unparseable decision."""
+
+
+class DisallowedValue(Exception):
+    """The decision uses a category, priority or action type outside the allowed set (FR-005)."""
+
+    def __init__(self, code: str) -> None:
+        # The message is the fixed rule code only: the offending value is model text.
+        super().__init__(code)
+        self.code = code
 
 
 class UnknownCustomer(Exception):
@@ -67,6 +77,9 @@ def decide(ticket: Ticket, model: ChatModel, max_steps: int = 6) -> DecideResult
                 decision = Decision.model_validate_json(reply.get("content") or "")
             except ValidationError as exc:
                 # `from None`: the cause would carry the model's text into Temporal history.
+                code = rules.disallowed_value(exc)
+                if code is not None:
+                    raise DisallowedValue(code) from None
                 raise UnreadableModelAnswer(f"decision does not parse: {exc.error_count()} error(s)") from None
             return DecideResult(decision=decision, tool_calls=tool_calls)
         # The assistant message must precede its tool results (OpenAI-compatible providers require it).

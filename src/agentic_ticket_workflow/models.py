@@ -11,7 +11,7 @@ Identifier = Annotated[str, Field(pattern=IDENTIFIER_PATTERN)]
 Category = Literal["account", "billing", "technical", "other"]
 Priority = Literal["low", "normal", "high", "urgent"]
 # Later slices add values (e.g. waiting for approval).
-Step = Literal["received", "deciding", "acting", "done"]
+Step = Literal["received", "deciding", "checking", "acting", "done"]
 
 
 class Ticket(BaseModel):
@@ -67,6 +67,11 @@ class DecideResult(BaseModel):
     tool_calls: list[ToolCall]
 
 
+class CheckRequest(BaseModel):
+    customer_id: str
+    decision: Decision
+
+
 class ActRequest(BaseModel):
     ticket_id: str
     idempotency_key: str
@@ -85,4 +90,6 @@ class TicketStatus(BaseModel):
     steps: list[Step]
     tool_calls: list[ToolCall] = []
     decision: Decision | None = None
+    # The code of the decision rule the model broke (FR-005); the ticket is then escalated with it.
+    violation: str | None = None
     result: ActionResult | None = None

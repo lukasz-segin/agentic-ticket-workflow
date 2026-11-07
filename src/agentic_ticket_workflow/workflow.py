@@ -1,4 +1,4 @@
-"""The durable per-ticket process (FR-001…FR-004): decide → refund guard → act, with a queryable status."""
+"""The durable per-ticket process (FR-001…FR-005): decide → check → refund guard → act, with a queryable status."""
 
 import logging
 from datetime import timedelta
@@ -8,10 +8,12 @@ from temporalio.common import RetryPolicy
 from temporalio.exceptions import ActivityError, ApplicationError
 
 with workflow.unsafe.imports_passed_through():
+    from agentic_ticket_workflow import rules
     from agentic_ticket_workflow.models import (
         Action,
         ActionResult,
         ActRequest,
+        CheckRequest,
         DecideResult,
         EscalateAction,
         Step,
@@ -20,6 +22,7 @@ with workflow.unsafe.imports_passed_through():
     )
 
 DECIDE_RETRY = RetryPolicy(maximum_attempts=3, initial_interval=timedelta(seconds=1), backoff_coefficient=2)
+CHECK_RETRY = RetryPolicy(maximum_attempts=3, initial_interval=timedelta(seconds=1), backoff_coefficient=2)
 ACT_RETRY = RetryPolicy(
     maximum_attempts=5,
     initial_interval=timedelta(seconds=1),
@@ -29,9 +32,9 @@ ACT_RETRY = RetryPolicy(
 
 
 # Non-retryable activity errors whose `ApplicationError.type` is one of these codes end in an
-# escalation with that code as the reason, instead of failing the ticket (FR-008). S-07 adds more.
+# escalation with that code as the reason, instead of failing the ticket (FR-005, FR-008). S-07 adds more.
 UNKNOWN_CUSTOMER = "unknown_customer"
-ESCALATE_ON_ERROR = frozenset({UNKNOWN_CUSTOMER})
+ESCALATE_ON_ERROR = frozenset({UNKNOWN_CUSTOMER}) | rules.ALLOWED_VALUE_CODES
 
 WORKFLOW_ID_PREFIX = "ticket-"
 
@@ -83,6 +86,8 @@ class TicketWorkflow:
             if code is None or code not in ESCALATE_ON_ERROR:
                 raise
             # No decision: the decision and tool calls stay empty in the status.
+            if code in rules.ALLOWED_VALUE_CODES:
+                self._status.violation = code
             action = EscalateAction(reason=code)
             log.info("escalated before decision", extra={"action": action.type, "reason_code": code})
         else:
@@ -99,8 +104,22 @@ class TicketWorkflow:
                 },
             )
 
+            self._enter("checking")
+            violation = await workflow.execute_activity(
+                "check",
+                CheckRequest(customer_id=ticket.customer_id, decision=decided.decision),
+                result_type=str | None,
+                start_to_close_timeout=timedelta(seconds=10),
+                retry_policy=CHECK_RETRY,
+            )
+
             action = decided.decision.action
-            if action.type == "refund":
+            if violation is not None:
+                # Set before acting, so the broken rule shows while the helpdesk may still be retrying.
+                self._status.violation = violation
+                action = EscalateAction(reason=violation)
+                log.info("rule broken", extra={"action": action.type, "reason_code": violation})
+            elif action.type == "refund":
                 # No approval wait until S-05: a refund is never issued without a human.
                 action = EscalateAction(reason="refund_needs_approval")
                 log.info("refund held for approval", extra={"action": action.type, "reason_code": action.reason})
