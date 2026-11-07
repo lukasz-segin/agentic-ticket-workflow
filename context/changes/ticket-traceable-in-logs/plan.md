@@ -278,11 +278,11 @@ The Dockerfile CMD changes from the `uvicorn` CLI to `python -m agentic_ticket_w
 
 #### Automated
 
-- [x] 2.1 Full suite passes, including the end-to-end trace test: `uv run pytest`
-- [x] 2.2 Image builds with the new API entrypoint: `docker compose build`
+- [x] 2.1 Full suite passes, including the end-to-end trace test: `uv run pytest` — 3d54078
+- [x] 2.2 Image builds with the new API entrypoint: `docker compose build` — 3d54078
 
 #### Manual
 
-- [x] 2.3 `docker compose up` + T-1: JSON-only logs, full trace by `grep T-1`, no ticket text
-- [x] 2.4 Retried ticket shows a WARNING line with `error_type` and both IDs
-- [x] 2.5 `LOG_LEVEL=DEBUG`: our DEBUG lines appear, no `temporalio` DEBUG lines
+- [x] 2.3 `docker compose up` + T-1: JSON-only logs, full trace by `grep T-1`, no ticket text — 3d54078
+- [x] 2.4 Retried ticket shows a WARNING line with `error_type` and both IDs — 3d54078
+- [x] 2.5 `LOG_LEVEL=DEBUG`: our DEBUG lines appear, no `temporalio` DEBUG lines — 3d54078
