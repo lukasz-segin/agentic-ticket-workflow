@@ -1,4 +1,4 @@
-"""HTTP layer (FR-001…FR-003): start or find a ticket's workflow and read its status."""
+"""HTTP layer (FR-001…FR-003, FR-006): start or find a ticket's workflow, read its status, answer a refund."""
 
 import logging
 from contextlib import asynccontextmanager
@@ -7,21 +7,31 @@ from datetime import timedelta
 import uvicorn
 from fastapi import FastAPI, HTTPException, Path, Request, Response, status
 from pydantic import BaseModel
-from temporalio.client import Client, WorkflowExecutionStatus, WorkflowQueryFailedError
+from temporalio.client import (
+    Client,
+    WorkflowExecutionDescription,
+    WorkflowExecutionStatus,
+    WorkflowHandle,
+    WorkflowQueryFailedError,
+    WorkflowUpdateFailedError,
+    WorkflowUpdateRPCTimeoutOrCancelledError,
+)
 from temporalio.common import WorkflowIDReusePolicy
 from temporalio.contrib.pydantic import pydantic_data_converter
-from temporalio.exceptions import WorkflowAlreadyStartedError
+from temporalio.exceptions import ApplicationError, WorkflowAlreadyStartedError
 from temporalio.service import RPCError, RPCStatusCode
 
 from agentic_ticket_workflow.config import Settings
 from agentic_ticket_workflow.logs import configure_logging
-from agentic_ticket_workflow.models import IDENTIFIER_PATTERN, Ticket, TicketStatus
-from agentic_ticket_workflow.workflow import TicketWorkflow, workflow_id_for
+from agentic_ticket_workflow.models import IDENTIFIER_PATTERN, Approval, Ticket, TicketStatus
+from agentic_ticket_workflow.workflow import NOT_AWAITING_APPROVAL, TicketWorkflow, workflow_id_for
 
 log = logging.getLogger("agentic_ticket_workflow.api")
 
 # Temporal errors a later call may get past: the client answers 503 instead of 500.
 _UNAVAILABLE = {RPCStatusCode.UNAVAILABLE, RPCStatusCode.DEADLINE_EXCEEDED}
+# What an Update gets when the workflow closed after `describe()` said it was running.
+_CLOSED_MEANWHILE = {RPCStatusCode.NOT_FOUND, RPCStatusCode.FAILED_PRECONDITION}
 
 
 def _ids(ticket_id: str, workflow_id: str) -> dict[str, str]:
@@ -42,6 +52,30 @@ class SubmitResponse(BaseModel):
 class TicketView(TicketStatus):
     # Temporal's execution status (running, completed, failed, …); the workflow can't know its own.
     status: str
+
+
+class ApprovalResponse(BaseModel):
+    ticket_id: str
+    workflow_id: str
+    approved: bool
+
+
+async def _describe(handle: WorkflowHandle, ticket_id: str, workflow_id: str) -> WorkflowExecutionDescription:
+    """The ticket's execution, or 404 if there is none and 503 if Temporal can't be reached."""
+    try:
+        return await handle.describe(rpc_timeout=timedelta(seconds=5))
+    except RPCError as err:
+        if err.status == RPCStatusCode.NOT_FOUND:
+            log.info("ticket not found", extra=_ids(ticket_id, workflow_id))
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"ticket {ticket_id} not found") from err
+        if err.status in _UNAVAILABLE:
+            raise _temporal_unavailable(ticket_id, workflow_id, err) from err
+        raise
+
+
+def _approval_refused(ticket_id: str, workflow_id: str) -> HTTPException:
+    log.info("approval refused", extra={**_ids(ticket_id, workflow_id), "reason_code": NOT_AWAITING_APPROVAL})
+    return HTTPException(status.HTTP_409_CONFLICT, f"ticket {ticket_id} is not awaiting approval")
 
 
 @asynccontextmanager
@@ -93,15 +127,7 @@ async def get_ticket(
     client: Client = request.app.state.temporal_client
     workflow_id = workflow_id_for(ticket_id)
     handle = client.get_workflow_handle_for(TicketWorkflow.run, workflow_id)
-    try:
-        description = await handle.describe(rpc_timeout=timedelta(seconds=5))
-    except RPCError as err:
-        if err.status == RPCStatusCode.NOT_FOUND:
-            log.info("ticket not found", extra=_ids(ticket_id, workflow_id))
-            raise HTTPException(status.HTTP_404_NOT_FOUND, f"ticket {ticket_id} not found") from err
-        if err.status in _UNAVAILABLE:
-            raise _temporal_unavailable(ticket_id, workflow_id, err) from err
-        raise
+    description = await _describe(handle, ticket_id, workflow_id)
 
     if description.status == WorkflowExecutionStatus.COMPLETED:
         # Read from history: needs no worker.
@@ -120,6 +146,47 @@ async def get_ticket(
     view = TicketView(**ticket_status.model_dump(), status=description.status.name.lower())
     log.debug("ticket status read", extra={**_ids(ticket_id, workflow_id), "status": view.status, "step": view.step})
     return view
+
+
+@app.post("/tickets/{ticket_id}/approval", response_model=ApprovalResponse)
+async def approve_ticket(
+    approval: Approval,
+    request: Request,
+    ticket_id: str = Path(pattern=IDENTIFIER_PATTERN),
+) -> ApprovalResponse:
+    """Approve or reject a waiting refund. Returns once the answer is recorded, not once it is acted on.
+
+    404: no such ticket. 409: the ticket isn't waiting for an approval (any more), which the workflow's
+    Update validator decides, so a late or second answer never reaches the workflow."""
+    client: Client = request.app.state.temporal_client
+    workflow_id = workflow_id_for(ticket_id)
+    handle = client.get_workflow_handle_for(TicketWorkflow.run, workflow_id)
+    # An Update to a closed workflow fails at the RPC level, so check first that it is running.
+    description = await _describe(handle, ticket_id, workflow_id)
+    if description.status != WorkflowExecutionStatus.RUNNING:
+        raise _approval_refused(ticket_id, workflow_id)
+
+    try:
+        await handle.execute_update(TicketWorkflow.approve, approval, rpc_timeout=timedelta(seconds=5))
+    except WorkflowUpdateFailedError as err:
+        if isinstance(err.cause, ApplicationError) and err.cause.type == NOT_AWAITING_APPROVAL:
+            raise _approval_refused(ticket_id, workflow_id) from err
+        raise
+    except RPCError as err:
+        if err.status in _CLOSED_MEANWHILE:
+            raise _approval_refused(ticket_id, workflow_id) from err
+        if err.status in _UNAVAILABLE:
+            raise _temporal_unavailable(ticket_id, workflow_id, err) from err
+        raise
+    except WorkflowUpdateRPCTimeoutOrCancelledError as err:  # e.g. no worker to run the Update
+        raise _temporal_unavailable(ticket_id, workflow_id, err) from err
+
+    # The approver name is an audit field; the comment is free text and is never logged.
+    log.info(
+        "approval recorded",
+        extra={**_ids(ticket_id, workflow_id), "approved": approval.approved, "approver": approval.approver},
+    )
+    return ApprovalResponse(ticket_id=ticket_id, workflow_id=workflow_id, approved=approval.approved)
 
 
 def serve() -> None:

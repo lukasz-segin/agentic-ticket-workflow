@@ -1,10 +1,12 @@
+import asyncio
 import json
 import math
 import uuid
+from contextlib import asynccontextmanager
 
 import pytest
 from temporalio import activity
-from temporalio.client import WorkflowFailureError
+from temporalio.client import WorkflowFailureError, WorkflowHandle, WorkflowQueryFailedError, WorkflowUpdateFailedError
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
@@ -15,6 +17,7 @@ from agentic_ticket_workflow.helpdesk import FakeHelpdesk
 from agentic_ticket_workflow.models import (
     ActionResult,
     ActRequest,
+    Approval,
     CloseAction,
     DecideResult,
     Decision,
@@ -22,23 +25,26 @@ from agentic_ticket_workflow.models import (
     RefundAction,
     ReplyAction,
     Ticket,
+    TicketStatus,
     ToolCall,
 )
-from agentic_ticket_workflow.workflow import TicketWorkflow, ticket_id_from, workflow_id_for
+from agentic_ticket_workflow.workflow import NOT_AWAITING_APPROVAL, TicketWorkflow, ticket_id_from, workflow_id_for
+from tests.fakes import ScriptedRandom
 
 T1_REPLY = ReplyAction(message="Reset your password: ...", article_ids=["KB-1"])
+# A valid refund: C-100's own invoice, for no more than its amount.
+T2_REFUND = RefundAction(invoice_id="INV-1002", amount_eur=49.0)
+T2_DECISION = Decision(category="billing", priority="normal", action=T2_REFUND)
 
 
-async def run_ticket(
-    env: WorkflowEnvironment,
-    ticket: Ticket,
+def fake_activities(
     decision: Decision | ApplicationError,
+    act_calls: list[ActRequest],
     decide_calls: list[Ticket] | None = None,
+    act_gate: asyncio.Event | None = None,
 ):
-    """Run the workflow with fake decide/act activities. An `ApplicationError` is raised by `decide`.
-
-    Returns (final status, status queried after completion, act requests)."""
-    act_calls: list[ActRequest] = []
+    """Fake decide/act plus the real check. An `ApplicationError` is raised by `decide`; `act` records
+    each request and, given a gate, blocks until it is set, so the workflow stays running at `acting`."""
 
     @activity.defn(name="decide")
     async def fake_decide(t: Ticket) -> DecideResult:
@@ -51,15 +57,54 @@ async def run_ticket(
     @activity.defn(name="act")
     async def fake_act(req: ActRequest) -> ActionResult:
         act_calls.append(req)
+        if act_gate is not None:
+            await act_gate.wait()
         return ActionResult(action=req.action, helpdesk_ref="HD-1")
 
+    return [fake_decide, check, fake_act]
+
+
+@asynccontextmanager
+async def started(env: WorkflowEnvironment, ticket: Ticket, activities):
+    """Start the ticket's workflow on a fresh worker; the worker runs until the block ends."""
     task_queue = str(uuid.uuid4())
-    async with Worker(
-        env.client, task_queue=task_queue, workflows=[TicketWorkflow], activities=[fake_decide, check, fake_act]
-    ):
-        handle = await env.client.start_workflow(
+    async with Worker(env.client, task_queue=task_queue, workflows=[TicketWorkflow], activities=activities):
+        yield await env.client.start_workflow(
             TicketWorkflow.run, ticket, id=workflow_id_for(ticket.ticket_id), task_queue=task_queue
         )
+
+
+async def wait_for_step(handle: WorkflowHandle, step: str) -> TicketStatus:
+    """Poll the status query until the workflow is at `step`."""
+    for _ in range(200):
+        try:
+            status = await handle.query(TicketWorkflow.status)
+        except WorkflowQueryFailedError:  # not started yet
+            status = None
+        if status is not None and status.step == step:
+            return status
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"workflow never reached step {step!r}")
+
+
+async def assert_refused(handle: WorkflowHandle, approval: Approval) -> None:
+    with pytest.raises(WorkflowUpdateFailedError) as refused:
+        await handle.execute_update(TicketWorkflow.approve, approval)
+    assert isinstance(refused.value.cause, ApplicationError)
+    assert refused.value.cause.type == NOT_AWAITING_APPROVAL
+
+
+async def run_ticket(
+    env: WorkflowEnvironment,
+    ticket: Ticket,
+    decision: Decision | ApplicationError,
+    decide_calls: list[Ticket] | None = None,
+):
+    """Run the workflow to completion with fake decide/act activities.
+
+    Returns (final status, status queried after completion, act requests)."""
+    act_calls: list[ActRequest] = []
+    async with started(env, ticket, fake_activities(decision, act_calls, decide_calls)) as handle:
         status = await handle.result()
         queried = await handle.query(TicketWorkflow.status)
     return status, queried, act_calls
@@ -81,18 +126,104 @@ async def test_answered_ticket(env, tickets):
     assert queried == status
 
 
-async def test_refund_is_escalated_until_approval_exists(env, tickets):
-    # A valid refund: C-100's own invoice, for no more than its amount.
-    refund = RefundAction(invoice_id="INV-1002", amount_eur=49.0)
-    decision = Decision(category="billing", priority="normal", action=refund)
-    status, _, act_calls = await run_ticket(env, tickets["T-2"], decision)
+async def test_approved_refund_is_issued_exactly_once_despite_helpdesk_failures(env, tickets):
+    # Attempt 1: fail roll (0.0 < 0.5), then the "after recording" branch (0.9 >= 0.5): the refund is
+    # recorded and the response is lost. Attempt 2 (a Temporal retry): roll passes (0.9), the known key
+    # returns the recorded result instead of refunding again.
+    helpdesk = FakeHelpdesk(0.5, rng=ScriptedRandom([0.0, 0.9, 0.9]))
+    acts = TicketActivities(FakeChatModel(), helpdesk)
+    approval = Approval(approved=True, approver="Ann", comment="duplicate confirmed")
 
-    assert status.violation is None
+    async with started(env, tickets["T-2"], [acts.decide, check, acts.act]) as handle:
+        waiting = await wait_for_step(handle, "awaiting_approval")
+        assert waiting.violation is None
+        assert waiting.decision.action == T2_REFUND
+        assert waiting.result is None
+        assert helpdesk.performed == {}
+
+        await handle.execute_update(TicketWorkflow.approve, approval)
+        status = await handle.result()
+
+    assert status.steps == ["received", "deciding", "checking", "awaiting_approval", "acting", "done"]
+    assert status.result == ActionResult(action=T2_REFUND, helpdesk_ref="HD-1")
+    assert status.approval == approval
+    assert list(helpdesk.performed) == ["ticket-T-2:refund"]
+    with pytest.raises(StopIteration):  # the whole script was used: both attempts happened
+        helpdesk.rng.random()
+
+
+async def test_concurrent_approve_and_reject_accept_exactly_one(env, tickets):
+    act_calls: list[ActRequest] = []
+    async with started(env, tickets["T-2"], fake_activities(T2_DECISION, act_calls)) as handle:
+        await wait_for_step(handle, "awaiting_approval")
+        outcomes = await asyncio.gather(
+            handle.execute_update(TicketWorkflow.approve, Approval(approved=True)),
+            handle.execute_update(TicketWorkflow.approve, Approval(approved=False)),
+            return_exceptions=True,
+        )
+        status = await handle.result()
+
+    accepted = [i for i, outcome in enumerate(outcomes) if not isinstance(outcome, BaseException)]
+    assert len(accepted) == 1
+    refused = outcomes[1 - accepted[0]]
+    assert isinstance(refused, WorkflowUpdateFailedError)
+    assert refused.cause.type == NOT_AWAITING_APPROVAL
+    approved = accepted[0] == 0
+    assert status.approval.approved is approved
     assert len(act_calls) == 1
-    assert act_calls[0].action == EscalateAction(reason="refund_needs_approval")
-    assert act_calls[0].idempotency_key == "ticket-T-2:escalate"
-    assert status.decision.action.type == "refund"
-    assert status.result.action == EscalateAction(reason="refund_needs_approval")
+    assert act_calls[0].action.type == ("refund" if approved else "close")
+
+
+@pytest.mark.parametrize(
+    ("comment", "reason"),
+    [("not a duplicate", "refund_rejected: not a duplicate"), (None, "refund_rejected")],
+)
+async def test_rejected_refund_closes_with_the_comment(env, tickets, comment, reason):
+    act_calls: list[ActRequest] = []
+    async with started(env, tickets["T-2"], fake_activities(T2_DECISION, act_calls)) as handle:
+        await wait_for_step(handle, "awaiting_approval")
+        await handle.execute_update(TicketWorkflow.approve, Approval(approved=False, approver="Ann", comment=comment))
+        status = await handle.result()
+
+    assert status.steps == ["received", "deciding", "checking", "awaiting_approval", "acting", "done"]
+    assert status.decision == T2_DECISION  # the rejected proposal stays visible
+    assert len(act_calls) == 1  # no refund
+    assert act_calls[0].action == CloseAction(reason=reason)
+    assert act_calls[0].idempotency_key == "ticket-T-2:close"
+    assert status.result.action == CloseAction(reason=reason)
+    assert status.approval == Approval(approved=False, approver="Ann", comment=comment)
+
+
+async def test_second_approval_is_refused(env, tickets):
+    act_calls: list[ActRequest] = []
+    gate = asyncio.Event()
+    async with started(env, tickets["T-2"], fake_activities(T2_DECISION, act_calls, act_gate=gate)) as handle:
+        await wait_for_step(handle, "awaiting_approval")
+        await handle.execute_update(TicketWorkflow.approve, Approval(approved=True))
+        await wait_for_step(handle, "acting")  # still running: act is blocked
+        await assert_refused(handle, Approval(approved=True))
+        await assert_refused(handle, Approval(approved=False))
+        gate.set()
+        status = await handle.result()
+
+    assert status.approval == Approval(approved=True)
+    assert len(act_calls) == 1
+    assert act_calls[0].action == T2_REFUND
+
+
+async def test_approval_for_a_ticket_not_awaiting_is_refused(env, tickets):
+    act_calls: list[ActRequest] = []
+    gate = asyncio.Event()
+    decision = Decision(category="account", priority="normal", action=T1_REPLY)
+    async with started(env, tickets["T-1"], fake_activities(decision, act_calls, act_gate=gate)) as handle:
+        await wait_for_step(handle, "acting")
+        await assert_refused(handle, Approval(approved=True))
+        gate.set()
+        status = await handle.result()
+
+    assert "awaiting_approval" not in status.steps
+    assert status.approval is None
+    assert status.result.action == T1_REPLY
 
 
 async def test_refund_breaking_a_rule_is_escalated_with_the_rule(env, tickets):
@@ -225,14 +356,7 @@ async def test_t6_injection_is_escalated_with_the_broken_rule_through_the_real_a
     # The model's proposal stays visible; only the escalation is performed (run_real checks it is one action).
     assert status.decision.action == RefundAction(invoice_id="INV-1002", amount_eur=5000.0)
     assert status.result.action == EscalateAction(reason="refund_amount_above_invoice")
-
-
-async def test_t2_valid_refund_is_held_for_approval_through_the_real_activities(env, tickets):
-    status = await run_real(env, tickets["T-2"])
-    assert status.step == "done"
-    assert status.violation is None
-    assert status.decision.action == RefundAction(invoice_id="INV-1002", amount_eur=49.0)
-    assert status.result.action == EscalateAction(reason="refund_needs_approval")
+    assert "awaiting_approval" not in status.steps  # a rule-breaking refund never waits for a person
 
 
 async def run_real(env: WorkflowEnvironment, ticket: Ticket):

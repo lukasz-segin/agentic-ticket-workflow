@@ -44,8 +44,8 @@ Northdesk's support team triages every ticket by hand. That means repetitive wor
 | S-01 | first-ticket-answered       | Support agent can submit T-1, get its ID at once, and read its step, decision and KB-1 reply             | —             | US-01, FR-001, FR-002, FR-003, FR-004, FR-009, FR-011   | done     | [#1](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/1) |
 | S-02 | ticket-traceable-in-logs    | Operator can follow one ticket through API, workflow and activity logs by ticket ID and workflow ID      | S-01          | FR-010                                                  | done        | [#2](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/2) |
 | S-03 | example-tickets-triaged     | Support agent sees T-3, T-4, T-5 get their expected decisions and T-7 escalated as `unknown_customer`    | S-01          | FR-004, FR-008, FR-009                                  | done     | [#3](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/3) |
-| S-04 | injection-escalated         | Support agent sees T-6's rule-breaking refund turned into an escalation naming the broken rule           | S-01          | US-03, FR-005, FR-011                                   | in-progress | [#4](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/4) |
-| S-05 | refund-approved-or-rejected | Support agent can approve or reject T-2's waiting refund; an approved refund is issued exactly once      | S-04          | US-02, FR-006, FR-007, FR-011                           | proposed | [#5](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/5) |
+| S-04 | injection-escalated         | Support agent sees T-6's rule-breaking refund turned into an escalation naming the broken rule           | S-01          | US-03, FR-005, FR-011                                   | done | [#4](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/4) |
+| S-05 | refund-approved-or-rejected | Support agent can approve or reject T-2's waiting refund; an approved refund is issued exactly once      | S-04          | US-02, FR-006, FR-007, FR-011                           | in-progress | [#5](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/5) |
 | S-06 | refund-timeout-escalated    | Support agent sees an unanswered refund escalated after 24 h, and a late approval refused                | S-05          | US-04, FR-006, FR-011                                   | proposed | [#6](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/6) |
 | S-07 | failures-end-cleanly        | Support agent sees every ticket reach a final state under helpdesk/LLM failures, with a clear reason     | S-01          | FR-007, FR-008, FR-011                                  | proposed | [#7](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/7) |
 | S-08 | real-llm-provider           | Reviewer can switch from the fake model to a real LLM provider with a setting                            | S-04          | FR-004, FR-009                                          | proposed | [#8](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/8) |
@@ -129,7 +129,7 @@ None. The deploy layer is present, and each missing cross-cutting piece is intro
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Placed before any refund can be acted on, so no slice ever carries out the model's unchecked refund. The rules must stay plain code, independent of the HTTP, workflow and LLM layers (AGENTS.md).
-- **Status:** in-progress
+- **Status:** done
 
 ### S-05: Refund approved or rejected by a person
 
@@ -141,7 +141,7 @@ None. The deploy layer is present, and each missing cross-cutting piece is intro
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Highest money risk in the product. The not-found/conflict refusal must happen before the approval reaches the workflow (shape-notes design note: an update validator), and the refund must reuse S-01's idempotency key.
-- **Status:** proposed
+- **Status:** in-progress
 
 ### S-06: Unanswered refund escalated after 24 h
 
@@ -238,3 +238,4 @@ None. The deploy layer is present, and each missing cross-cutting piece is intro
 - **S-01: Support agent can submit ticket T-1 and get its ID back at once. Processing continues in the background: the fake model looks things up through the tool loop (`get_customer`, `get_invoices`, `search_kb`) and decides `account` / `normal` / `reply` citing KB-1. The reply is sent to the fake helpdesk exactly once, even with temporary helpdesk failures switched on (bounded retries plus an idempotency key). The agent can read the ticket's current step, decision and final result at any time. Resubmitting the same ticket ID returns the existing processing, including when that ticket has already finished or failed, so its action is never repeated. `docker compose up` brings this up with no API key, and the single test command runs a time-skipped workflow test for an answered ticket plus one HTTP API test.** — Archived 2026-11-06 → `context/archive/2026-11-06-first-ticket-answered/`. Lesson: —.
 - **S-02: Operator can follow one ticket through every log line from the API, the workflow and the activities by its ticket ID and workflow ID. Logs are machine-readable, one record per line, carry steps and decisions, and never the ticket body.** — Archived 2026-11-07 → `context/archive/2026-11-07-ticket-traceable-in-logs/`. Lesson: —.
 - **S-03: Support agent sees T-3 escalated (`technical` / `urgent`), T-4 answered citing KB-4 (`account` / `high`), and T-5 closed (`other` / `low`). T-7 is escalated with `unknown_customer` before the model is consulted.** — Archived 2026-11-07 → `context/archive/2026-11-07-example-tickets-triaged/`. Lesson: —.
+- **S-04: Support agent sees T-6's proposed 5000 EUR refund turned into an escalation, with the broken rule (amount above the invoice) recorded as the reason in the ticket status. Every decision is checked against the allowed values and the refund rules (the customer's own invoice, amount above 0 and not above the invoice). The checks have unit tests.** — Archived 2026-11-07 → `context/archive/2026-11-07-injection-escalated/`. Lesson: —.

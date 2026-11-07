@@ -14,7 +14,7 @@ from agentic_ticket_workflow.fake_llm import FakeChatModel
 from agentic_ticket_workflow.helpdesk import FakeHelpdesk
 from agentic_ticket_workflow.logs import ALLOWED_EXTRAS, configure_logging
 from agentic_ticket_workflow.workflow import TicketWorkflow
-from tests.test_helpdesk import ScriptedRandom
+from tests.fakes import ScriptedRandom
 
 LOGGERS = ("", "agentic_ticket_workflow", "temporalio", "uvicorn", "uvicorn.error", "uvicorn.access")
 
