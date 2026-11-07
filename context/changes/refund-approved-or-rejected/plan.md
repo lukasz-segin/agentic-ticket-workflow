@@ -242,13 +242,13 @@ This is local only: nothing is deployed, and the README's Azure section already 
 
 #### Automated
 
-- [x] 2.1 API tests pass: `uv run pytest tests/test_api.py`
-- [x] 2.2 Full suite passes: `uv run pytest`
-- [x] 2.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check`
+- [x] 2.1 API tests pass: `uv run pytest tests/test_api.py` — 9fb4c5c
+- [x] 2.2 Full suite passes: `uv run pytest` — 9fb4c5c
+- [x] 2.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check` — 9fb4c5c
 
 #### Manual
 
-- [x] 2.4 Compose: T-2 waits, approve → `done` with one refund despite 30% failures
-- [x] 2.5 Compose: repeat approval 409, unknown 404, T-1 409
-- [x] 2.6 Compose: rejecting a fresh refund ticket closes it with `refund_rejected: …` and no refund
-- [x] 2.7 Approval log lines carry IDs, `approved` and `approver`, and no comment text
+- [x] 2.4 Compose: T-2 waits, approve → `done` with one refund despite 30% failures — 9fb4c5c
+- [x] 2.5 Compose: repeat approval 409, unknown 404, T-1 409 — 9fb4c5c
+- [x] 2.6 Compose: rejecting a fresh refund ticket closes it with `refund_rejected: …` and no refund — 9fb4c5c
+- [x] 2.7 Approval log lines carry IDs, `approved` and `approver`, and no comment text — 9fb4c5c
