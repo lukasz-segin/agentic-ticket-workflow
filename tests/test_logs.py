@@ -7,7 +7,7 @@ import httpx
 import pytest
 from temporalio.worker import Worker
 
-from agentic_ticket_workflow.activities import TicketActivities
+from agentic_ticket_workflow.activities import TicketActivities, check
 from agentic_ticket_workflow.api import app
 from agentic_ticket_workflow.config import Settings
 from agentic_ticket_workflow.fake_llm import FakeChatModel
@@ -162,7 +162,9 @@ async def test_t1_is_traceable_end_to_end_without_ticket_text(env, tickets, monk
 
     async with (
         httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
-        Worker(env.client, task_queue=task_queue, workflows=[TicketWorkflow], activities=[acts.decide, acts.act]),
+        Worker(
+            env.client, task_queue=task_queue, workflows=[TicketWorkflow], activities=[acts.decide, check, acts.act]
+        ),
     ):
         assert (await http.post("/tickets", json=t1.model_dump())).status_code == 202
         await env.client.get_workflow_handle("ticket-T-1").result()
@@ -180,6 +182,7 @@ async def test_t1_is_traceable_end_to_end_without_ticket_text(env, tickets, monk
     assert {line["step"] for line in lines if line["message"] == "step entered"} == {
         "received",
         "deciding",
+        "checking",
         "acting",
         "done",
     }

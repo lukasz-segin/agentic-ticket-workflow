@@ -4,7 +4,7 @@ import httpx
 from temporalio.service import RPCError, RPCStatusCode
 from temporalio.worker import Worker
 
-from agentic_ticket_workflow.activities import TicketActivities
+from agentic_ticket_workflow.activities import TicketActivities, check
 from agentic_ticket_workflow.api import app
 from agentic_ticket_workflow.fake_llm import FakeChatModel
 from agentic_ticket_workflow.helpdesk import FakeHelpdesk
@@ -20,7 +20,7 @@ async def test_submit_and_read_t1_through_the_real_activities(env, tickets, monk
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
         async with Worker(
-            env.client, task_queue=task_queue, workflows=[TicketWorkflow], activities=[acts.decide, acts.act]
+            env.client, task_queue=task_queue, workflows=[TicketWorkflow], activities=[acts.decide, check, acts.act]
         ):
             first = await http.post("/tickets", json=t1)
             assert first.status_code == 202

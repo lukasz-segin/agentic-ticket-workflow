@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from agentic_ticket_workflow.agent import UnknownCustomer, UnreadableModelAnswer, decide
+from agentic_ticket_workflow.agent import DisallowedValue, UnknownCustomer, UnreadableModelAnswer, decide
 from agentic_ticket_workflow.fake_llm import FakeChatModel
 from agentic_ticket_workflow.models import Ticket
 
@@ -112,6 +112,28 @@ def test_step_limit_raises_unreadable(tickets):
 def test_unparseable_decision_raises_unreadable(tickets):
     with pytest.raises(UnreadableModelAnswer):
         decide(tickets["T-1"], NotJsonModel())
+
+
+class AnswerModel:
+    def __init__(self, answer):
+        self.answer = answer
+
+    def complete(self, messages, tools):
+        return {"role": "assistant", "content": json.dumps(self.answer), "tool_calls": None}
+
+
+def test_disallowed_category_raises_with_the_rule_code_only(tickets):
+    answer = {"category": "SECRET MODEL TEXT", "priority": "normal", "action": {"type": "close", "reason": "x"}}
+    with pytest.raises(DisallowedValue) as caught:
+        decide(tickets["T-1"], AnswerModel(answer))
+    assert caught.value.code == "category_not_allowed"
+    assert caught.value.__cause__ is None
+    assert "SECRET" not in str(caught.value)
+
+
+def test_missing_action_is_still_unreadable(tickets):
+    with pytest.raises(UnreadableModelAnswer):
+        decide(tickets["T-1"], AnswerModel({"category": "account", "priority": "normal"}))
 
 
 class BadToolCallModel:
