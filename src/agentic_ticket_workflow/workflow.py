@@ -1,4 +1,8 @@
-"""The durable per-ticket process (FR-001…FR-005): decide → check → refund guard → act, with a queryable status."""
+"""The durable per-ticket process (FR-001…FR-006): decide → check → approval wait (refunds only) → act.
+
+The status is queryable. A valid refund waits at `awaiting_approval` until the `approve` Update records a
+person's answer; its validator refuses any approval the ticket is not waiting for.
+"""
 
 import logging
 from datetime import timedelta
@@ -13,7 +17,9 @@ with workflow.unsafe.imports_passed_through():
         Action,
         ActionResult,
         ActRequest,
+        Approval,
         CheckRequest,
+        CloseAction,
         DecideResult,
         EscalateAction,
         Step,
@@ -35,6 +41,11 @@ ACT_RETRY = RetryPolicy(
 # escalation with that code as the reason, instead of failing the ticket (FR-005, FR-008). S-07 adds more.
 UNKNOWN_CUSTOMER = "unknown_customer"
 ESCALATE_ON_ERROR = frozenset({UNKNOWN_CUSTOMER}) | rules.ALLOWED_VALUE_CODES
+
+# The `ApplicationError.type` an approval is refused with when the ticket isn't waiting for one (API: 409).
+NOT_AWAITING_APPROVAL = "not_awaiting_approval"
+# The close reason of a rejected refund; the approver's comment, if any, follows after ": ".
+REFUND_REJECTED = "refund_rejected"
 
 WORKFLOW_ID_PREFIX = "ticket-"
 
@@ -120,9 +131,15 @@ class TicketWorkflow:
                 action = EscalateAction(reason=violation)
                 log.info("rule broken", extra={"action": action.type, "reason_code": violation})
             elif action.type == "refund":
-                # No approval wait until S-05: a refund is never issued without a human.
-                action = EscalateAction(reason="refund_needs_approval")
-                log.info("refund held for approval", extra={"action": action.type, "reason_code": action.reason})
+                # A refund is never issued without a human. Enter the step first, so the validator sees
+                # the ticket as waiting as soon as the wait starts. (S-06 adds the 24 h timeout here.)
+                self._enter("awaiting_approval")
+                log.info("refund awaiting approval", extra={"action": action.type})
+                await workflow.wait_condition(lambda: self._status.approval is not None)
+                approval = self._status.approval
+                if not approval.approved:
+                    reason = f"{REFUND_REJECTED}: {approval.comment}" if approval.comment else REFUND_REJECTED
+                    action = CloseAction(reason=reason)
 
         self._enter("acting")
         self._status.result = await workflow.execute_activity(
@@ -143,6 +160,25 @@ class TicketWorkflow:
 
         self._enter("done")
         return self._status
+
+    @workflow.update
+    def approve(self, approval: Approval) -> None:
+        """Record a person's answer to the waiting refund; the run coroutine acts on it.
+
+        Synchronous on purpose: the SDK runs the validator and this handler with no yield in between,
+        so the first approval wins. The re-check keeps that true even if this ever becomes async."""
+        self._refuse_unless_awaiting_approval()
+        self._status.approval = approval
+        # The approver name is an audit field; the comment is free text and is never logged.
+        log.info("refund approval received", extra={"approved": approval.approved, "approver": approval.approver})
+
+    @approve.validator
+    def _validate_approve(self, approval: Approval) -> None:
+        self._refuse_unless_awaiting_approval()
+
+    def _refuse_unless_awaiting_approval(self) -> None:
+        if self._status is None or self._status.step != "awaiting_approval" or self._status.approval is not None:
+            raise ApplicationError("ticket is not awaiting approval", type=NOT_AWAITING_APPROVAL, non_retryable=True)
 
     @workflow.query
     def status(self) -> TicketStatus:

@@ -11,8 +11,8 @@ Identifier = Annotated[str, Field(pattern=IDENTIFIER_PATTERN)]
 
 Category = Literal["account", "billing", "technical", "other"]
 Priority = Literal["low", "normal", "high", "urgent"]
-# Later slices add values (e.g. waiting for approval).
-Step = Literal["received", "deciding", "checking", "acting", "done"]
+# A valid refund waits at "awaiting_approval" between "checking" and "acting".
+Step = Literal["received", "deciding", "checking", "awaiting_approval", "acting", "done"]
 
 
 class Ticket(BaseModel):
@@ -92,6 +92,16 @@ class ActionResult(BaseModel):
     helpdesk_ref: str
 
 
+class Approval(BaseModel):
+    """A person's answer to a waiting refund: the Update argument, the API body and the status field.
+
+    Bounded because it is stored in Temporal history; `approver` is also logged, `comment` never is."""
+
+    approved: bool
+    approver: Annotated[str, Field(min_length=1, max_length=100)] | None = None
+    comment: Annotated[str, Field(min_length=1, max_length=1000)] | None = None
+
+
 class TicketStatus(BaseModel):
     ticket_id: str
     workflow_id: str
@@ -101,4 +111,5 @@ class TicketStatus(BaseModel):
     decision: Decision | None = None
     # The code of the decision rule the model broke (FR-005); the ticket is then escalated with it.
     violation: str | None = None
+    approval: Approval | None = None
     result: ActionResult | None = None

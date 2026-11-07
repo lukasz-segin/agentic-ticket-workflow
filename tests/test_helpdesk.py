@@ -1,24 +1,12 @@
-import random
-
 import pytest
 
 from agentic_ticket_workflow.helpdesk import FakeHelpdesk, HelpdeskTemporaryError
 from agentic_ticket_workflow.models import ActRequest, ReplyAction
+from tests.fakes import ScriptedRandom
 
 
 def _request(key: str = "ticket-T-1:reply") -> ActRequest:
     return ActRequest(ticket_id="T-1", idempotency_key=key, action=ReplyAction(message="hi", article_ids=["KB-1"]))
-
-
-class ScriptedRandom(random.Random):
-    """Returns the given values from random(), in order."""
-
-    def __init__(self, values: list[float]):
-        super().__init__()
-        self.values = iter(values)
-
-    def random(self) -> float:
-        return next(self.values)
 
 
 def test_same_key_is_performed_once():

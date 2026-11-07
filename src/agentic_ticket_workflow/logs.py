@@ -15,9 +15,11 @@ from typing import Any, TextIO
 from agentic_ticket_workflow.workflow import ticket_id_from, workflow_id_for
 
 # Values that are either Literal-typed or produced by our own code, never model or ticket text.
-# `reason_code` takes only code-produced reason codes (e.g. "refund_needs_approval"). It is deliberately not
-# `reason`, the name of the model-written field on EscalateAction/CloseAction, so that field can't slip through.
-# `error_type` takes only an exception class name.
+# `reason_code` takes only code-produced reason codes (e.g. "refund_amount_above_invoice"). It is deliberately
+# not `reason`, the name of the model-written field on EscalateAction/CloseAction, so that field can't slip through.
+# `error_type` takes only an exception class name. `approved` is the approval's bool.
+# `approver` is the one free-text field allowed (user decision, as an audit trail): the approver's own name,
+# capped at 100 chars by `Approval` and JSON-escaped like every value. The approval comment never goes in.
 # Names must not clash with LogRecord's own attributes (e.g. `created`, its timestamp).
 ALLOWED_EXTRAS = (
     "step",
@@ -29,6 +31,8 @@ ALLOWED_EXTRAS = (
     "reason_code",
     "helpdesk_ref",
     "error_type",
+    "approved",
+    "approver",
 )
 
 # Loggers that would otherwise bring their own handlers or levels; they follow the root instead.
