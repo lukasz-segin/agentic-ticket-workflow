@@ -168,7 +168,7 @@ Both processes use the formatter, and the API, workflow and activities emit the 
 - Module-level `log = workflow.LoggerAdapter(logging.getLogger("agentic_ticket_workflow.workflow"), None)`, with `workflow_info_on_message = False`.
 - INFO `"step entered"` `step=<step>`, for `received` and in `_enter`.
 - INFO `"decision made"` with `category`, `priority`, `action` (type only) and `tools` (names only).
-- INFO `"refund held for approval"` with `action="escalate"` and `reason="refund_needs_approval"`.
+- INFO `"refund held for approval"` with `action="escalate"` and `reason_code="refund_needs_approval"` (renamed from `reason` in impl review F2).
 - INFO `"action performed"` with `action` (type) and `helpdesk_ref`.
 
 #### 4. Activity lines

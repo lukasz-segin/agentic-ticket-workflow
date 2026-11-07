@@ -74,7 +74,7 @@ async def test_refund_is_escalated_until_approval_exists(env, tickets):
 
 @pytest.mark.parametrize(
     ("workflow_id", "ticket_id"),
-    [("ticket-T-1", "T-1"), (workflow_id_for("T-7"), "T-7"), ("cron-job-1", None), ("", None), ("ticket", None)],
+    [("ticket-T-1", "T-1"), (workflow_id_for("T-7"), "T-7"), ("cron-job-1", None), ("", None), ("ticket", None), ("ticket-", None)],
 )
 def test_ticket_id_from_inverts_workflow_id_for(workflow_id, ticket_id):
     assert ticket_id_from(workflow_id) == ticket_id

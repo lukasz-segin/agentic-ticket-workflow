@@ -35,7 +35,9 @@ def workflow_id_for(ticket_id: str) -> str:
 
 def ticket_id_from(workflow_id: str) -> str | None:
     """Inverse of `workflow_id_for`; `None` for a workflow ID we did not mint."""
-    return workflow_id.removeprefix(WORKFLOW_ID_PREFIX) if workflow_id.startswith(WORKFLOW_ID_PREFIX) else None
+    if not workflow_id.startswith(WORKFLOW_ID_PREFIX):
+        return None
+    return workflow_id.removeprefix(WORKFLOW_ID_PREFIX) or None
 
 
 # Our own logger (so LOG_LEVEL reaches it) wrapped in the SDK adapter: replay-safe, and the
@@ -84,7 +86,7 @@ class TicketWorkflow:
         if action.type == "refund":
             # No approval wait until S-05: a refund is never issued without a human.
             action = EscalateAction(reason="refund_needs_approval")
-            log.info("refund held for approval", extra={"action": action.type, "reason": action.reason})
+            log.info("refund held for approval", extra={"action": action.type, "reason_code": action.reason})
 
         self._enter("acting")
         self._status.result = await workflow.execute_activity(
