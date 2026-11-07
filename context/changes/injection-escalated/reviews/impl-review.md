@@ -4,16 +4,16 @@
 - **Plan**: context/changes/injection-escalated/plan.md
 - **Scope**: Phases 1 and 2 of 2; all 14 Progress items marked complete
 - **Date**: 2026-11-07
-- **Verdict**: NEEDS ATTENTION
-- **Findings**: 0 critical, 1 warning, 0 observations
+- **Verdict**: APPROVED (was NEEDS ATTENTION; F1 fixed in 6e6e277)
+- **Findings**: 0 critical, 1 warning (fixed), 0 observations
 
 ## Verdicts
 
 | Dimension | Verdict |
 |-----------|---------|
-| Plan Adherence | FAIL — the explicitly planned NaN escalation is blocked by payload serialization |
+| Plan Adherence | PASS after fix — FAIL at review: the planned NaN escalation was blocked by payload serialization (F1) |
 | Scope Discipline | PASS |
-| Safety & Quality | WARNING — invalid proposals remain blocked, but the required escalation can be lost |
+| Safety & Quality | PASS after fix — WARNING at review: the required escalation could be lost (F1) |
 | Architecture | PASS |
 | Pattern Consistency | PASS |
 | Success Criteria | PASS — listed automated commands and manual examples pass |
@@ -22,7 +22,7 @@
 
 ### F1 — NaN refund proposals cannot reach the check activity
 
-- **Severity**: WARNING
+- **Severity**: WARNING — FIXED in 6e6e277
 - **Impact**: MEDIUM — real tradeoff; pause to reason through it
 - **Dimension**: Plan Adherence / Safety & Quality
 - **Location**: src/agentic_ticket_workflow/activities.py:40; src/agentic_ticket_workflow/workflow.py:80; src/agentic_ticket_workflow/models.py:34
@@ -88,4 +88,4 @@ Local verification artifacts, outside the repository: `%TEMP%/atw-s04-temporal-u
 
 ## Review state
 
-Only this report and the change's review-status stamp were written by this review. Progress and roadmap were left unchanged. No application fixes were applied; F1 awaits triage.
+Only this report and the change's review-status stamp were written by this review. Progress and roadmap were left unchanged. The review itself applied no application fixes. F1 was then triaged as accepted and FIXED in 6e6e277 (see its Decision).
