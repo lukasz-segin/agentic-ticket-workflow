@@ -4,6 +4,7 @@ import pytest
 
 from agentic_ticket_workflow.agent import UnreadableModelAnswer, decide
 from agentic_ticket_workflow.fake_llm import FakeChatModel
+from agentic_ticket_workflow.models import Ticket
 
 
 class AlwaysToolModel:
@@ -54,8 +55,40 @@ def test_assistant_message_precedes_its_tool_results(tickets):
             assert message["tool_call_id"] in ids
 
 
-def test_t5_escalates_with_no_matching_rule(tickets):
-    result = decide(tickets["T-5"], FakeChatModel())
+@pytest.mark.parametrize(
+    ("ticket_id", "category", "priority", "action_type", "reason"),
+    [
+        ("T-3", "technical", "urgent", "escalate", "possible_outage"),
+        ("T-4", "account", "high", "reply", None),
+        ("T-5", "other", "low", "close", "not_support_request"),
+    ],
+)
+def test_example_tickets_get_their_expected_decision(tickets, ticket_id, category, priority, action_type, reason):
+    result = decide(tickets[ticket_id], FakeChatModel())
+    action = result.decision.action
+    assert (result.decision.category, result.decision.priority, action.type) == (category, priority, action_type)
+    if reason is not None:
+        assert action.reason == reason
+
+
+def test_t4_cites_kb4_after_checking_customer_and_invoices(tickets):
+    # KB-3 and KB-4 tie on the ticket text alone; the customer's "suspended" status breaks the tie.
+    result = decide(tickets["T-4"], FakeChatModel())
+    assert result.decision.action.article_ids == ["KB-4"]
+    assert [call.name for call in result.tool_calls] == ["get_customer", "get_invoices", "search_kb"]
+
+
+def test_unmatched_ticket_escalates_with_no_matching_rule():
+    ticket = Ticket(ticket_id="X-1", customer_id="C-200", subject="Question", body="What colour is the sky?")
+    result = decide(ticket, FakeChatModel())
+    assert result.decision.action.type == "escalate"
+    assert result.decision.action.reason == "no_matching_rule"
+
+
+@pytest.mark.parametrize("ticket_id", ["T-2", "T-6"])
+def test_refund_tickets_match_no_rule_yet(tickets, ticket_id):
+    # The first matching rule wins: an S-03 keyword here would shadow S-04's refund rules.
+    result = decide(tickets[ticket_id], FakeChatModel())
     assert result.decision.action.type == "escalate"
     assert result.decision.action.reason == "no_matching_rule"
 

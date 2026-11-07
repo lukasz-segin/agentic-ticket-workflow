@@ -28,6 +28,19 @@ curl localhost:8000/tickets/T-1
 
 Submitting the same `ticket_id` again returns `200` with `"created": false`, whether that ticket is still running or has already finished. The ticket is never processed twice. An unknown ID returns `404`. Open `ticket-T-1` in the Temporal UI to see the `decide` and `act` activities and any `act` retries.
 
+### Fake model
+
+The fake model (`src/agentic_ticket_workflow/fake_llm.py`) is simple and rule-based. It goes through the same tool loop and returns messages in the same shape as a real model. First it calls `get_customer`, then `get_invoices` if the rule needs invoices, then `search_kb`. The search query is the ticket's subject and body plus the customer's status (e.g. `suspended`). The first rule with a keyword in the subject or body decides:
+
+| Keywords | Category / priority | Action |
+| --- | --- | --- |
+| `password`, `log in`, `login` | account / normal | reply with the top KB article |
+| `outage`, `errors`, `down` | technical / urgent | escalate (`possible_outage`) |
+| `locked`, `suspended` | account / high | reply with the top KB article (looks up invoices first) |
+| `pizza`, `lunch`, `restaurant` | other / low | close (`not_support_request`) |
+
+A ticket that matches no rule escalates with `no_matching_rule`, and a reply rule with no KB hit escalates with `no_kb_article`, so a person sees it. Limits: keywords are case-insensitive substring matches (`down` also matches `download`), and the rules were written with the example tickets in mind. It is a stand-in for running with no key, not a classifier.
+
 ## Tests
 
 ```sh
