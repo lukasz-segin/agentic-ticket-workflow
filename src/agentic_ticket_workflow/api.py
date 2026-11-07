@@ -105,7 +105,12 @@ async def get_ticket(
 
     if description.status == WorkflowExecutionStatus.COMPLETED:
         # Read from history: needs no worker.
-        ticket_status = await handle.result()
+        try:
+            ticket_status = await handle.result(rpc_timeout=timedelta(seconds=5))
+        except RPCError as err:
+            if err.status in _UNAVAILABLE:
+                raise _temporal_unavailable(ticket_id, workflow_id, err) from err
+            raise
     else:
         try:
             ticket_status = await handle.query(TicketWorkflow.status, rpc_timeout=timedelta(seconds=2))

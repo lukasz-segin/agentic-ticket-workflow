@@ -19,8 +19,9 @@ async def test_submit_and_read_t1_through_the_real_activities(env, tickets, monk
     t1 = tickets["T-1"].model_dump()
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
-        async with Worker(env.client, task_queue=task_queue, workflows=[TicketWorkflow],
-                          activities=[acts.decide, acts.act]):
+        async with Worker(
+            env.client, task_queue=task_queue, workflows=[TicketWorkflow], activities=[acts.decide, acts.act]
+        ):
             first = await http.post("/tickets", json=t1)
             assert first.status_code == 202
             assert first.json() == {"ticket_id": "T-1", "workflow_id": "ticket-T-1", "created": True}
@@ -51,6 +52,8 @@ async def test_submit_and_read_t1_through_the_real_activities(env, tickets, monk
         assert view.json()["status"] == "completed"
 
         assert (await http.get("/tickets/NOPE")).status_code == 404
+        # Malformed IDs are rejected before any lookup, so arbitrary path text never reaches a log line.
+        assert (await http.get("/tickets/has%20space")).status_code == 422
 
         missing_body = {k: v for k, v in t1.items() if k != "body"}
         assert (await http.post("/tickets", json=missing_body)).status_code == 422

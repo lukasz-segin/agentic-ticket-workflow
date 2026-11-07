@@ -1,5 +1,6 @@
 import uuid
 
+import pytest
 from temporalio import activity
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
@@ -7,21 +8,23 @@ from temporalio.worker import Worker
 from agentic_ticket_workflow.models import (
     ActionResult,
     ActRequest,
-    Decision,
     DecideResult,
+    Decision,
     EscalateAction,
     RefundAction,
     ReplyAction,
     Ticket,
     ToolCall,
 )
-from agentic_ticket_workflow.workflow import TicketWorkflow, workflow_id_for
+from agentic_ticket_workflow.workflow import TicketWorkflow, ticket_id_from, workflow_id_for
 
 T1_REPLY = ReplyAction(message="Reset your password: ...", article_ids=["KB-1"])
 
 
 async def run_ticket(env: WorkflowEnvironment, ticket: Ticket, decision: Decision):
-    """Run the workflow with fake decide/act activities; return (final status, status queried after completion, act requests)."""
+    """Run the workflow with fake decide/act activities.
+
+    Returns (final status, status queried after completion, act requests)."""
     act_calls: list[ActRequest] = []
 
     @activity.defn(name="decide")
@@ -34,8 +37,9 @@ async def run_ticket(env: WorkflowEnvironment, ticket: Ticket, decision: Decisio
         return ActionResult(action=req.action, helpdesk_ref="HD-1")
 
     task_queue = str(uuid.uuid4())
-    async with Worker(env.client, task_queue=task_queue, workflows=[TicketWorkflow],
-                      activities=[fake_decide, fake_act]):
+    async with Worker(
+        env.client, task_queue=task_queue, workflows=[TicketWorkflow], activities=[fake_decide, fake_act]
+    ):
         handle = await env.client.start_workflow(
             TicketWorkflow.run, ticket, id=workflow_id_for(ticket.ticket_id), task_queue=task_queue
         )
@@ -69,3 +73,18 @@ async def test_refund_is_escalated_until_approval_exists(env, tickets):
     assert act_calls[0].idempotency_key == "ticket-T-1:escalate"
     assert status.decision.action.type == "refund"
     assert status.result.action == EscalateAction(reason="refund_needs_approval")
+
+
+@pytest.mark.parametrize(
+    ("workflow_id", "ticket_id"),
+    [
+        ("ticket-T-1", "T-1"),
+        (workflow_id_for("T-7"), "T-7"),
+        ("cron-job-1", None),
+        ("", None),
+        ("ticket", None),
+        ("ticket-", None),
+    ],
+)
+def test_ticket_id_from_inverts_workflow_id_for(workflow_id, ticket_id):
+    assert ticket_id_from(workflow_id) == ticket_id

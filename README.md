@@ -36,6 +36,13 @@ uv run pytest
 
 The tests need no network and no API key. The workflow and API tests use Temporal's time-skipping test server. The first run downloads that server once and caches it in the system temp folder, so later runs work offline.
 
+Lint and format checks use [Ruff](https://docs.astral.sh/ruff/) (configured in `pyproject.toml`):
+
+```sh
+uv run ruff check          # lint (add --fix to apply safe fixes)
+uv run ruff format --check # formatting (drop --check to reformat)
+```
+
 ## Known limitations
 
 - **Duplicate detection lasts only as long as Temporal's retention period.** A resubmitted ticket ID returns the existing processing only while Temporal keeps that workflow. The `default` namespace keeps it for **24 h** after it closes. After that, the same ID starts a new workflow. Then only the fake helpdesk's idempotency keys stop the action from being repeated.

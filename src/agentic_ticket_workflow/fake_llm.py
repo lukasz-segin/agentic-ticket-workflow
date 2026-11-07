@@ -21,9 +21,7 @@ class Rule:
     reason: str = "matched_rule"  # used by escalate / close rules
 
 
-RULES: tuple[Rule, ...] = (
-    Rule(("password", "log in", "login"), "account", "normal", "reply"),
-)
+RULES: tuple[Rule, ...] = (Rule(("password", "log in", "login"), "account", "normal", "reply"),)
 
 
 def _match(text: str) -> Rule | None:
@@ -77,7 +75,11 @@ class FakeChatModel:
     def _decision(rule: Rule | None, kb_hits: list[dict[str, Any]]) -> Decision:
         if rule is None:
             return Decision.model_validate(
-                {"category": "other", "priority": "normal", "action": {"type": "escalate", "reason": "no_matching_rule"}}
+                {
+                    "category": "other",
+                    "priority": "normal",
+                    "action": {"type": "escalate", "reason": "no_matching_rule"},
+                }
             )
         if rule.action == "reply":
             if not kb_hits:

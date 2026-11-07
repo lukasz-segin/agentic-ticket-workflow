@@ -12,8 +12,11 @@ class AlwaysToolModel:
             "role": "assistant",
             "content": None,
             "tool_calls": [
-                {"id": "c1", "type": "function",
-                 "function": {"name": "search_kb", "arguments": json.dumps({"query": "password"})}}
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "search_kb", "arguments": json.dumps({"query": "password"})},
+                }
             ],
         }
 

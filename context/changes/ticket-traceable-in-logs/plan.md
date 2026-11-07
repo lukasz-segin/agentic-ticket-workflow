@@ -78,7 +78,7 @@ Add the JSON formatter, the level setup and the `LOG_LEVEL` setting, with unit t
   - `message`: `record.getMessage()`.
   - `ticket_id` / `workflow_id` (only when known). `workflow_id` comes from the record's `workflow_id` extra, else `temporal_workflow["workflow_id"]`, else `temporal_activity["workflow_id"]`. `ticket_id` comes from the `ticket_id` extra, else `ticket_id_from(workflow_id)`. A `workflow_id` missing while `ticket_id` is known comes from `workflow_id_for`.
   - From the Temporal dicts: `run_id` (workflow `run_id` or activity `workflow_run_id`), `attempt`, `activity_type`.
-  - The allow-listed extras, when present: `step`, `status`, `created`, `category`, `priority`, `action`, `tools`, `reason`, `helpdesk_ref`. The docstring states that `reason` takes only code-produced reason codes, never model text. Every other extra is dropped.
+  - The allow-listed extras, when present: `step`, `status`, `category`, `priority`, `action`, `tools`, `reason`, `helpdesk_ref`, `error_type`. The docstring states that `reason` takes only code-produced reason codes, never model text, and that `error_type` takes only an exception class name. Every other extra is dropped. No name may clash with a built-in `LogRecord` attribute (e.g. `created` is the record's timestamp), and a test checks this.
   - With `exc_info`: `error_type` (the exception class name) and `stack` (a list of `"file:line in function"` frames from the traceback), with no exception message and no chained causes. `exc_text`/`stack_info` are never emitted.
   - `json.dumps(..., default=str)`, one line.
 - `configure_logging(level: str, stream: TextIO | None = None) -> None`:
@@ -153,7 +153,7 @@ Both processes use the formatter, and the API, workflow and activities emit the 
 - `serve()` + `if __name__ == "__main__": serve()`. It reads `Settings.from_env()`, calls `configure_logging(settings.log_level)`, then `uvicorn.run(app, host="0.0.0.0", port=8000, log_config=None, access_log=False)`. The Dockerfile CMD becomes `["python", "-m", "agentic_ticket_workflow.api"]`, and compose's `api` service keeps inheriting it.
 - `GET /tickets/{ticket_id}`: `ticket_id` uses the same pattern as `models.Identifier`, via `fastapi.Path`. A malformed ID gets 422 instead of 404. `/tickets/NOPE` is still 404.
 - Lines, all with `ticket_id` and `workflow_id` extras:
-  - INFO `"ticket submitted"` `created=True`, or INFO `"ticket already submitted"` `created=False`.
+  - INFO `"ticket submitted"`, or INFO `"ticket already submitted"`. The message tells the two apart; there is no `created` field (see the allow-list note in Phase 1).
   - INFO `"ticket not found"`.
   - WARNING `"temporal unavailable"` with `error_type` as an allow-listed extra. Rewrite `_temporal_unavailable` from printf text to structured fields.
   - DEBUG `"ticket status read"` with `status` and `step`.
@@ -168,7 +168,7 @@ Both processes use the formatter, and the API, workflow and activities emit the 
 - Module-level `log = workflow.LoggerAdapter(logging.getLogger("agentic_ticket_workflow.workflow"), None)`, with `workflow_info_on_message = False`.
 - INFO `"step entered"` `step=<step>`, for `received` and in `_enter`.
 - INFO `"decision made"` with `category`, `priority`, `action` (type only) and `tools` (names only).
-- INFO `"refund held for approval"` with `action="escalate"` and `reason="refund_needs_approval"`.
+- INFO `"refund held for approval"` with `action="escalate"` and `reason_code="refund_needs_approval"` (renamed from `reason` in impl review F2).
 - INFO `"action performed"` with `action` (type) and `helpdesk_ref`.
 
 #### 4. Activity lines

@@ -7,9 +7,7 @@ from agentic_ticket_workflow.models import ActRequest, ReplyAction
 
 
 def _request(key: str = "ticket-T-1:reply") -> ActRequest:
-    return ActRequest(
-        ticket_id="T-1", idempotency_key=key, action=ReplyAction(message="hi", article_ids=["KB-1"])
-    )
+    return ActRequest(ticket_id="T-1", idempotency_key=key, action=ReplyAction(message="hi", article_ids=["KB-1"]))
 
 
 class ScriptedRandom(random.Random):

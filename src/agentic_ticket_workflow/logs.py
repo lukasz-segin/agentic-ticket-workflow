@@ -15,7 +15,8 @@ from typing import Any, TextIO
 from agentic_ticket_workflow.workflow import ticket_id_from, workflow_id_for
 
 # Values that are either Literal-typed or produced by our own code, never model or ticket text.
-# `reason` takes only code-produced reason codes (e.g. "refund_needs_approval"), never a model-written reason.
+# `reason_code` takes only code-produced reason codes (e.g. "refund_needs_approval"). It is deliberately not
+# `reason`, the name of the model-written field on EscalateAction/CloseAction, so that field can't slip through.
 # `error_type` takes only an exception class name.
 # Names must not clash with LogRecord's own attributes (e.g. `created`, its timestamp).
 ALLOWED_EXTRAS = (
@@ -25,7 +26,7 @@ ALLOWED_EXTRAS = (
     "priority",
     "action",
     "tools",
-    "reason",
+    "reason_code",
     "helpdesk_ref",
     "error_type",
 )
@@ -35,11 +36,17 @@ _THIRD_PARTY_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access", "temporali
 APP_LOGGER = "agentic_ticket_workflow"
 
 
+def _dict_extra(fields: dict[str, Any], key: str) -> dict[str, Any]:
+    """A Temporal SDK extra, or `{}` if it is missing or not a dict (a bad extra must not break the line)."""
+    value = fields.get(key)
+    return value if isinstance(value, dict) else {}
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         fields = record.__dict__
-        wf: dict[str, Any] = fields.get("temporal_workflow") or {}
-        act: dict[str, Any] = fields.get("temporal_activity") or {}
+        wf = _dict_extra(fields, "temporal_workflow")
+        act = _dict_extra(fields, "temporal_activity")
 
         line: dict[str, Any] = {
             "ts": datetime.fromtimestamp(record.created, UTC).isoformat(timespec="milliseconds"),

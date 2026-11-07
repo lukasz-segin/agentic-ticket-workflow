@@ -160,12 +160,13 @@ async def test_t1_is_traceable_end_to_end_without_ticket_text(env, tickets, monk
     acts = TicketActivities(FakeChatModel(), FakeHelpdesk(0.5, rng=ScriptedRandom([0.0, 0.1, 0.9])))
     t1 = tickets["T-1"]
 
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
-        async with Worker(env.client, task_queue=task_queue, workflows=[TicketWorkflow],
-                          activities=[acts.decide, acts.act]):
-            assert (await http.post("/tickets", json=t1.model_dump())).status_code == 202
-            await env.client.get_workflow_handle("ticket-T-1").result()
-            view = (await http.get("/tickets/T-1")).json()
+    async with (
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
+        Worker(env.client, task_queue=task_queue, workflows=[TicketWorkflow], activities=[acts.decide, acts.act]),
+    ):
+        assert (await http.post("/tickets", json=t1.model_dump())).status_code == 202
+        await env.client.get_workflow_handle("ticket-T-1").result()
+        view = (await http.get("/tickets/T-1")).json()
 
     raw = buffer.getvalue().splitlines()
     lines = [json.loads(line) for line in raw]  # every line is JSON
@@ -177,7 +178,10 @@ async def test_t1_is_traceable_end_to_end_without_ticket_text(env, tickets, monk
 
     assert any(line["message"] == "ticket submitted" for line in lines)
     assert {line["step"] for line in lines if line["message"] == "step entered"} == {
-        "received", "deciding", "acting", "done",
+        "received",
+        "deciding",
+        "acting",
+        "done",
     }
     decision = next(line for line in lines if line["message"] == "decision made")
     assert (decision["category"], decision["priority"], decision["action"]) == ("account", "normal", "reply")
