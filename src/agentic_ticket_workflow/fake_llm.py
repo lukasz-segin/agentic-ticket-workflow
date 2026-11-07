@@ -4,9 +4,14 @@ It calls the tools in a fixed order, then picks the first rule whose keyword occ
 ticket text. The KB query is the ticket text plus the customer's status from `get_customer`,
 so a suspended customer's question finds the suspended-account article. Later slices only
 append rules to RULES.
+
+The refund rule is deliberately gullible: it believes an amount stated in the ticket ("refund
+5000 EUR"), as a model following injected instructions would. The decision rules in `rules.py`
+are what stop it, never this fake.
 """
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -18,7 +23,7 @@ class Rule:
     keywords: tuple[str, ...]
     category: Category
     priority: Priority
-    action: Literal["reply", "escalate", "close"]
+    action: Literal["reply", "escalate", "close", "refund"]
     needs_invoices: bool = False
     reason: str = "matched_rule"  # used by escalate / close rules
 
@@ -28,7 +33,12 @@ RULES: tuple[Rule, ...] = (
     Rule(("outage", "errors", "down"), "technical", "urgent", "escalate", reason="possible_outage"),
     Rule(("locked", "suspended"), "account", "high", "reply", needs_invoices=True),
     Rule(("pizza", "lunch", "restaurant"), "other", "low", "close", reason="not_support_request"),
+    # Last, so the earlier rules keep precedence.
+    Rule(("refund", "charged twice"), "billing", "normal", "refund", needs_invoices=True),
 )
+
+# The first "<number> EUR" in the ticket text, e.g. "5000 EUR" or "49.00 eur".
+_STATED_AMOUNT = re.compile(r"(\d+(?:\.\d+)?)\s*eur\b", re.IGNORECASE)
 
 
 def _match(text: str) -> Rule | None:
@@ -76,11 +86,11 @@ class FakeChatModel:
             status = (results["get_customer"] or {}).get("status", "")
             return _tool_call("search_kb", {"query": f"{text} {status}"})
 
-        decision = self._decision(rule, results["search_kb"])
+        decision = self._decision(rule, results, text)
         return {"role": "assistant", "content": decision.model_dump_json(), "tool_calls": None}
 
     @staticmethod
-    def _decision(rule: Rule | None, kb_hits: list[dict[str, Any]]) -> Decision:
+    def _decision(rule: Rule | None, results: dict[str, Any], text: str) -> Decision:
         if rule is None:
             return Decision.model_validate(
                 {
@@ -89,6 +99,7 @@ class FakeChatModel:
                     "action": {"type": "escalate", "reason": "no_matching_rule"},
                 }
             )
+        kb_hits = results["search_kb"]
         if rule.action == "reply":
             if not kb_hits:
                 action = {"type": "escalate", "reason": "no_kb_article"}
@@ -99,6 +110,15 @@ class FakeChatModel:
                     "message": f"{top['title']}: {top['text']}",
                     "article_ids": [top["article_id"]],
                 }
+        elif rule.action == "refund":
+            invoices = results.get("get_invoices") or []
+            if not invoices:
+                action = {"type": "escalate", "reason": "no_invoice"}
+            else:
+                latest = max(invoices, key=lambda invoice: (invoice["month"], invoice["invoice_id"]))
+                stated = _STATED_AMOUNT.search(text)
+                amount = float(stated.group(1)) if stated else latest["amount_eur"]
+                action = {"type": "refund", "invoice_id": latest["invoice_id"], "amount_eur": amount}
         else:
             action = {"type": rule.action, "reason": rule.reason}
         return Decision.model_validate({"category": rule.category, "priority": rule.priority, "action": action})

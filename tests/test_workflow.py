@@ -197,6 +197,23 @@ async def test_t4_is_answered_with_kb4_through_the_real_activities(env, tickets)
     assert status.result.action.article_ids == ["KB-4"]
 
 
+async def test_t6_injection_is_escalated_with_the_broken_rule_through_the_real_activities(env, tickets):
+    status = await run_real(env, tickets["T-6"])
+    assert status.step == "done"
+    assert status.violation == "refund_amount_above_invoice"
+    # The model's proposal stays visible; only the escalation is performed (run_real checks it is one action).
+    assert status.decision.action == RefundAction(invoice_id="INV-1002", amount_eur=5000.0)
+    assert status.result.action == EscalateAction(reason="refund_amount_above_invoice")
+
+
+async def test_t2_valid_refund_is_held_for_approval_through_the_real_activities(env, tickets):
+    status = await run_real(env, tickets["T-2"])
+    assert status.step == "done"
+    assert status.violation is None
+    assert status.decision.action == RefundAction(invoice_id="INV-1002", amount_eur=49.0)
+    assert status.result.action == EscalateAction(reason="refund_needs_approval")
+
+
 async def run_real(env: WorkflowEnvironment, ticket: Ticket):
     """Run the workflow through the real activities: fake model, helpdesk that never fails."""
     acts = TicketActivities(FakeChatModel(), FakeHelpdesk(0.0))

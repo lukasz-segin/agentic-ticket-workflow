@@ -310,28 +310,28 @@ One extra local activity round-trip per ticket. It reads cached packaged data. N
 
 #### Automated
 
-- [x] 1.1 Rules unit tests pass: `uv run pytest tests/test_rules.py`
-- [x] 1.2 Agent, workflow, API and log tests pass: `uv run pytest tests/test_agent.py tests/test_workflow.py tests/test_api.py tests/test_logs.py`
-- [x] 1.3 Full suite passes: `uv run pytest`
-- [x] 1.4 `rules.py` imports no Temporal, FastAPI or LLM module
-- [x] 1.5 Lint and format pass: `uv run ruff check` and `uv run ruff format --check`
+- [x] 1.1 Rules unit tests pass: `uv run pytest tests/test_rules.py` — 5e00ef7
+- [x] 1.2 Agent, workflow, API and log tests pass: `uv run pytest tests/test_agent.py tests/test_workflow.py tests/test_api.py tests/test_logs.py` — 5e00ef7
+- [x] 1.3 Full suite passes: `uv run pytest` — 5e00ef7
+- [x] 1.4 `rules.py` imports no Temporal, FastAPI or LLM module — 5e00ef7
+- [x] 1.5 Lint and format pass: `uv run ruff check` and `uv run ruff format --check` — 5e00ef7
 
 #### Manual
 
-- [x] 1.6 On a fresh `atw-s04` Compose project, the Temporal UI shows `decide → check → act` for T-1 and the status lists `checking` with `"violation": null`
+- [x] 1.6 On a fresh `atw-s04` Compose project, the Temporal UI shows `decide → check → act` for T-1 and the status lists `checking` with `"violation": null` — 5e00ef7
 
 ### Phase 2: Fake refund rule, end to end
 
 #### Automated
 
-- [ ] 2.1 Agent tests pass: `uv run pytest tests/test_agent.py`
-- [ ] 2.2 End-to-end workflow tests pass: `uv run pytest tests/test_workflow.py`
-- [ ] 2.3 Full suite passes: `uv run pytest`
-- [ ] 2.4 Lint and format pass: `uv run ruff check` and `uv run ruff format --check`
+- [x] 2.1 Agent tests pass: `uv run pytest tests/test_agent.py`
+- [x] 2.2 End-to-end workflow tests pass: `uv run pytest tests/test_workflow.py`
+- [x] 2.3 Full suite passes: `uv run pytest`
+- [x] 2.4 Lint and format pass: `uv run ruff check` and `uv run ruff format --check`
 
 #### Manual
 
-- [ ] 2.5 T-6 ends with `violation: "refund_amount_above_invoice"`, the 5000.0 proposal visible, and no refund issued
-- [ ] 2.6 T-2 ends with `violation: null` and a `refund_needs_approval` escalation
-- [ ] 2.7 T-6 worker logs carry the reason code and never the ticket body or amount
-- [ ] 2.8 The `atw-s04` test project and its volume are removed with `docker compose -p atw-s04 down -v`
+- [x] 2.5 T-6 ends with `violation: "refund_amount_above_invoice"`, the 5000.0 proposal visible, and no refund issued
+- [x] 2.6 T-2 ends with `violation: null` and a `refund_needs_approval` escalation
+- [x] 2.7 T-6 worker logs carry the reason code and never the ticket body or amount
+- [x] 2.8 The `atw-s04` test project and its volume are removed with `docker compose -p atw-s04 down -v`

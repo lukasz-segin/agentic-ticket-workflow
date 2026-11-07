@@ -26,7 +26,7 @@ curl localhost:8000/tickets/T-1
 #  "action":{"type":"reply","article_ids":["KB-1"],...}},"result":{...,"helpdesk_ref":"HD-1"},...}
 ```
 
-Submitting the same `ticket_id` again returns `200` with `"created": false`, whether that ticket is still running or has already finished. The ticket is never processed twice. An unknown ID returns `404`. Open `ticket-T-1` in the Temporal UI to see the `decide` and `act` activities and any `act` retries.
+Submitting the same `ticket_id` again returns `200` with `"created": false`, whether that ticket is still running or has already finished. The ticket is never processed twice. An unknown ID returns `404`. Open `ticket-T-1` in the Temporal UI to see the `decide`, `check` and `act` activities and any `act` retries.
 
 ### Fake model
 
@@ -38,8 +38,28 @@ The fake model (`src/agentic_ticket_workflow/fake_llm.py`) is simple and rule-ba
 | `outage`, `errors`, `down` | technical / urgent | escalate (`possible_outage`) |
 | `locked`, `suspended` | account / high | reply with the top KB article (looks up invoices first) |
 | `pizza`, `lunch`, `restaurant` | other / low | close (`not_support_request`) |
+| `refund`, `charged twice` | billing / normal | refund the latest invoice, using an amount stated in the ticket if any (looks up invoices first) |
 
-A ticket that matches no rule escalates with `no_matching_rule`, and a reply rule with no KB hit escalates with `no_kb_article`, so a person sees it. Limits: keywords are case-insensitive substring matches (`down` also matches `download`), and the rules were written with the example tickets in mind. It is a stand-in for running with no key, not a classifier.
+A ticket that matches no rule escalates with `no_matching_rule`, a reply rule with no KB hit escalates with `no_kb_article`, and a refund rule for a customer with no invoices escalates with `no_invoice`, so a person sees it. The refund rule is deliberately naive: it believes an amount written in the ticket, as a model following injected instructions would, so T-6 proposes 5000 EUR and the decision rules below have something to stop. Limits: keywords are case-insensitive substring matches (`down` also matches `download`), and the rules were written with the example tickets in mind. It is a stand-in for running with no key, not a classifier.
+
+### Decision rules
+
+Every decision is checked in plain Python (`src/agentic_ticket_workflow/rules.py`) before anything is acted on. A decision that breaks a rule is not carried out. The ticket is escalated instead, with the broken rule's code as the reason, and the code is shown as `violation` in `GET /tickets/{id}`. The ticket text is never trusted: whatever it tells the model, the rules run in code on the model's output.
+
+| Code | Broken rule |
+| --- | --- |
+| `category_not_allowed` | category is not one of `account`, `billing`, `technical`, `other` |
+| `priority_not_allowed` | priority is not one of `low`, `normal`, `high`, `urgent` |
+| `action_not_allowed` | action is not one of `reply`, `refund`, `escalate`, `close` |
+| `refund_invoice_not_found` | the refunded invoice doesn't exist |
+| `refund_invoice_of_other_customer` | the refunded invoice belongs to another customer |
+| `refund_amount_not_positive` | the refund amount is not above 0 |
+| `refund_amount_above_invoice` | the refund amount is above the invoice amount |
+
+- **Allowed values** are named from the typed decision's parse errors, so the `Decision` schema stays the only list of them. `decide` is not retried for them, because asking again doesn't make an answer allowed. Other unreadable answers are not named this way.
+- **Refund rules** run after the model, in their own `check` step (an activity, so the workflow stays deterministic). They read the invoices from the data files, never from the model's tool results.
+- A refund that passes every rule is still not issued by the workflow: it is escalated with `refund_needs_approval`, so a person decides.
+- Limits: a refund of an unpaid invoice passes the rules, and so does a refund of the same invoice in full from two tickets. The person who decides on the refund is the only guard there.
 
 ## Tests
 
