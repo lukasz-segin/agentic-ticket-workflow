@@ -46,7 +46,7 @@ Northdesk's support team triages every ticket by hand. That means repetitive wor
 | S-03 | example-tickets-triaged     | Support agent sees T-3, T-4, T-5 get their expected decisions and T-7 escalated as `unknown_customer`    | S-01          | FR-004, FR-008, FR-009                                  | done     | [#3](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/3) |
 | S-04 | injection-escalated         | Support agent sees T-6's rule-breaking refund turned into an escalation naming the broken rule           | S-01          | US-03, FR-005, FR-011                                   | done | [#4](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/4) |
 | S-05 | refund-approved-or-rejected | Support agent can approve or reject T-2's waiting refund; an approved refund is issued exactly once      | S-04          | US-02, FR-006, FR-007, FR-011                           | done | [#5](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/5) |
-| S-06 | refund-timeout-escalated    | Support agent sees an unanswered refund escalated after 24 h, and a late approval refused                | S-05          | US-04, FR-006, FR-011                                   | proposed | [#6](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/6) |
+| S-06 | refund-timeout-escalated    | Support agent sees an unanswered refund escalated after 24 h, and a late approval refused                | S-05          | US-04, FR-006, FR-011                                   | in-progress | [#6](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/6) |
 | S-07 | failures-end-cleanly        | Support agent sees every ticket reach a final state under helpdesk/LLM failures, with a clear reason     | S-01          | FR-007, FR-008, FR-011                                  | proposed | [#7](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/7) |
 | S-08 | real-llm-provider           | Reviewer can switch from the fake model to a real LLM provider with a setting                            | S-04          | FR-004, FR-009                                          | proposed | [#8](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/8) |
 | S-09 | reviewer-readme-complete    | Reviewer can learn from the README how to run, call, test, understand and deploy the service             | S-02, S-03, S-06, S-07, S-08 | FR-012                                   | proposed | [#9](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/9) |
@@ -153,7 +153,7 @@ None. The deploy layer is present, and each missing cross-cutting piece is intro
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Kept separate from S-05 because a late approval is its own failure mode, with its own required test (FR-011 c). Its prerequisite is S-05, because the wait it times out is built there.
-- **Status:** proposed
+- **Status:** in-progress
 
 ### S-07: Failures end cleanly with a reason
 

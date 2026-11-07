@@ -3,6 +3,7 @@ import json
 import math
 import uuid
 from contextlib import asynccontextmanager
+from datetime import timedelta
 
 import pytest
 from temporalio import activity
@@ -28,7 +29,13 @@ from agentic_ticket_workflow.models import (
     TicketStatus,
     ToolCall,
 )
-from agentic_ticket_workflow.workflow import NOT_AWAITING_APPROVAL, TicketWorkflow, ticket_id_from, workflow_id_for
+from agentic_ticket_workflow.workflow import (
+    APPROVAL_TIMEOUT,
+    NOT_AWAITING_APPROVAL,
+    TicketWorkflow,
+    ticket_id_from,
+    workflow_id_for,
+)
 from tests.fakes import ScriptedRandom
 
 T1_REPLY = ReplyAction(message="Reset your password: ...", article_ids=["KB-1"])
@@ -64,11 +71,17 @@ def fake_activities(
     return [fake_decide, check, fake_act]
 
 
+def worker(env: WorkflowEnvironment, task_queue: str, activities, **options) -> Worker:
+    return Worker(env.client, task_queue=task_queue, workflows=[TicketWorkflow], activities=activities, **options)
+
+
 @asynccontextmanager
-async def started(env: WorkflowEnvironment, ticket: Ticket, activities):
-    """Start the ticket's workflow on a fresh worker; the worker runs until the block ends."""
-    task_queue = str(uuid.uuid4())
-    async with Worker(env.client, task_queue=task_queue, workflows=[TicketWorkflow], activities=activities):
+async def started(env: WorkflowEnvironment, ticket: Ticket, activities, task_queue: str | None = None, **options):
+    """Start the ticket's workflow on a fresh worker; the worker runs until the block ends.
+
+    `options` go to the `Worker`; `task_queue` lets a later worker pick the workflow up."""
+    task_queue = task_queue or str(uuid.uuid4())
+    async with worker(env, task_queue, activities, **options):
         yield await env.client.start_workflow(
             TicketWorkflow.run, ticket, id=workflow_id_for(ticket.ticket_id), task_queue=task_queue
         )
@@ -92,6 +105,14 @@ async def assert_refused(handle: WorkflowHandle, approval: Approval) -> None:
         await handle.execute_update(TicketWorkflow.approve, approval)
     assert isinstance(refused.value.cause, ApplicationError)
     assert refused.value.cause.type == NOT_AWAITING_APPROVAL
+
+
+async def skip_to_deadline(env: WorkflowEnvironment, handle: WorkflowHandle, waiting: TicketStatus) -> None:
+    """Advance the test server's clock to exactly the approval deadline, which fires the timer.
+
+    Only while the workflow waits: no margin, so a gated `act` never sits through skipped time (and
+    its 30 s timeout) afterwards."""
+    await env.sleep(waiting.approval_deadline - await env.get_current_time(handle))
 
 
 async def run_ticket(
@@ -224,6 +245,87 @@ async def test_approval_for_a_ticket_not_awaiting_is_refused(env, tickets):
     assert "awaiting_approval" not in status.steps
     assert status.approval is None
     assert status.result.action == T1_REPLY
+
+
+TIMED_OUT = EscalateAction(reason="approval_timeout")
+
+
+async def test_unanswered_refund_is_escalated_after_24h(env, tickets):
+    act_calls: list[ActRequest] = []
+    async with started(env, tickets["T-2"], fake_activities(T2_DECISION, act_calls)) as handle:
+        waiting = await wait_for_step(handle, "awaiting_approval")
+        assert waiting.approval_deadline is not None
+        status = await handle.result()  # nothing else to do: the test server skips the 24 h
+
+    assert status.steps == ["received", "deciding", "checking", "awaiting_approval", "acting", "done"]
+    assert status.decision == T2_DECISION  # the unanswered proposal stays visible
+    assert status.violation is None  # a timeout is not a broken rule
+    assert status.approval is None
+    assert status.approval_deadline == waiting.approval_deadline
+    assert len(act_calls) == 1  # no refund
+    assert act_calls[0].action == TIMED_OUT
+    assert act_calls[0].idempotency_key == "ticket-T-2:escalate"
+    assert status.result.action == TIMED_OUT
+
+
+async def test_late_approval_is_refused_and_never_refunds(env, tickets):
+    act_calls: list[ActRequest] = []
+    gate = asyncio.Event()
+    async with started(env, tickets["T-2"], fake_activities(T2_DECISION, act_calls, act_gate=gate)) as handle:
+        waiting = await wait_for_step(handle, "awaiting_approval")
+        await skip_to_deadline(env, handle, waiting)
+        await wait_for_step(handle, "acting")  # still running: act is blocked
+        await assert_refused(handle, Approval(approved=True))
+        await assert_refused(handle, Approval(approved=False))
+        gate.set()
+        status = await handle.result()
+
+    assert status.approval is None
+    assert len(act_calls) == 1
+    assert act_calls[0].action == TIMED_OUT
+
+
+async def test_approval_just_before_the_deadline_is_honoured(env, tickets):
+    act_calls: list[ActRequest] = []
+    async with started(env, tickets["T-2"], fake_activities(T2_DECISION, act_calls)) as handle:
+        await wait_for_step(handle, "awaiting_approval")
+        await env.sleep(APPROVAL_TIMEOUT - timedelta(minutes=1))
+        await handle.execute_update(TicketWorkflow.approve, Approval(approved=True))
+        status = await handle.result()
+
+    assert status.approval == Approval(approved=True)
+    assert len(act_calls) == 1
+    assert act_calls[0].action == T2_REFUND
+
+
+async def test_approval_queued_during_worker_downtime_after_the_deadline_is_refused(env, tickets):
+    # The worker is down when the deadline passes and an approval is queued meanwhile. The new worker gets
+    # the overdue timer and the Update together, and the SDK runs the Update first, while the step still
+    # says "awaiting_approval": only the validator's deadline check refuses it.
+    act_calls: list[ActRequest] = []
+    activities = fake_activities(T2_DECISION, act_calls)
+    task_queue = str(uuid.uuid4())
+    # No workflow cache: otherwise the test server keeps routing the workflow's tasks to this worker's sticky
+    # queue after it stops, and the next worker never sees them.
+    async with started(env, tickets["T-2"], activities, task_queue=task_queue, max_cached_workflows=0) as handle:
+        waiting = await wait_for_step(handle, "awaiting_approval")
+
+    # Skip first: the test server doesn't skip time while an Update waits for a worker. The timer fires on
+    # the server meanwhile; its workflow task stays pending until a worker comes back.
+    await skip_to_deadline(env, handle, waiting)
+    late = asyncio.create_task(handle.execute_update(TicketWorkflow.approve, Approval(approved=True)))
+    await asyncio.sleep(0.5)  # let the Update reach the server; with no worker it stays pending there
+    assert not late.done()
+
+    async with worker(env, task_queue, activities):
+        with pytest.raises(WorkflowUpdateFailedError) as refused:
+            await late
+        status = await handle.result()
+
+    assert refused.value.cause.type == NOT_AWAITING_APPROVAL
+    assert status.approval is None
+    assert len(act_calls) == 1  # no refund
+    assert act_calls[0].action == TIMED_OUT
 
 
 async def test_refund_breaking_a_rule_is_escalated_with_the_rule(env, tickets):
