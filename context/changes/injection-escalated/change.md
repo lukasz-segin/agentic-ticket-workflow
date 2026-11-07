@@ -1,7 +1,7 @@
 ---
 change_id: injection-escalated
 title: Injection escalated
-status: implemented
+status: impl_reviewed
 created: 2026-11-07
 updated: 2026-11-07
 archived_at: null
