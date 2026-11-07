@@ -211,12 +211,12 @@ Three rules are appended to `RULES`, and the fake model's KB query adds the cust
 
 #### Automated
 
-- [x] 2.1 Agent and workflow tests pass: `uv run pytest tests/test_agent.py tests/test_workflow.py`
-- [x] 2.2 Full suite passes: `uv run pytest`
-- [x] 2.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check`
+- [x] 2.1 Agent and workflow tests pass: `uv run pytest tests/test_agent.py tests/test_workflow.py` — 30372d6
+- [x] 2.2 Full suite passes: `uv run pytest` — 30372d6
+- [x] 2.3 Lint and format pass: `uv run ruff check` and `uv run ruff format --check` — 30372d6
 
 #### Manual
 
-- [x] 2.4 After `docker compose up`, `POST /tickets` with T-3, T-4, T-5 and T-7 from `src/agentic_ticket_workflow/data/tickets.json`; `GET /tickets/{id}` shows the outcomes in the Desired End State table
-- [x] 2.5 In the Temporal UI, T-7's `decide` activity ran exactly one attempt, and the workflow completed rather than failed
-- [x] 2.6 The worker logs for T-7 show `reason_code=unknown_customer` with `ticket_id` and `workflow_id`, and no ticket body
+- [x] 2.4 After `docker compose up`, `POST /tickets` with T-3, T-4, T-5 and T-7 from `src/agentic_ticket_workflow/data/tickets.json`; `GET /tickets/{id}` shows the outcomes in the Desired End State table — 30372d6
+- [x] 2.5 In the Temporal UI, T-7's `decide` activity ran exactly one attempt, and the workflow completed rather than failed — 30372d6
+- [x] 2.6 The worker logs for T-7 show `reason_code=unknown_customer` with `ticket_id` and `workflow_id`, and no ticket body — 30372d6
