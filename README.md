@@ -93,6 +93,20 @@ ContainerAppConsoleLogs_CL
 | order by TimeGenerated asc
 ```
 
+Each line is one JSON object (locally: `docker compose logs api worker | grep T-1`):
+
+```json
+{"ts": "2026-11-07T07:33:39.832+00:00", "level": "INFO", "logger": "agentic_ticket_workflow.workflow", "message": "decision made", "ticket_id": "T-1", "workflow_id": "ticket-T-1", "run_id": "…", "attempt": 1, "category": "account", "priority": "normal", "action": "reply", "tools": ["get_customer", "search_kb"]}
+```
+
+- **Fields:**
+  - Always: `ts`, `level`, `logger` and `message`.
+  - On ticket lines: `ticket_id`, `workflow_id`, and from Temporal `run_id`, `attempt` and `activity_type`.
+  - Allow-listed values: `step`, `status`, `category`, `priority`, `action` (type only), `tools` (names only), `reason` (code-produced codes only), `helpdesk_ref` and `error_type`.
+  - A failure (such as a helpdesk retry) logs `error_type` and `stack` frames, never the exception message.
+- **Never logged:** ticket subject and body, or model-written text (reply message, reasons, tool arguments). Any other extra field is dropped by the formatter (`src/agentic_ticket_workflow/logs.py`).
+- **`LOG_LEVEL`** sets only the app's own loggers. Temporal and uvicorn stay at `INFO` or above, because Temporal's DEBUG lines dump activity payloads, which contain ticket text.
+
 Alerts:
 
 - **Failed tickets:** a log alert on worker lines that contain `helpdesk_unavailable` or a failed ticket status.

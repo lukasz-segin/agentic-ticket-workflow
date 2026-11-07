@@ -16,16 +16,18 @@ from agentic_ticket_workflow.workflow import ticket_id_from, workflow_id_for
 
 # Values that are either Literal-typed or produced by our own code, never model or ticket text.
 # `reason` takes only code-produced reason codes (e.g. "refund_needs_approval"), never a model-written reason.
+# `error_type` takes only an exception class name.
+# Names must not clash with LogRecord's own attributes (e.g. `created`, its timestamp).
 ALLOWED_EXTRAS = (
     "step",
     "status",
-    "created",
     "category",
     "priority",
     "action",
     "tools",
     "reason",
     "helpdesk_ref",
+    "error_type",
 )
 
 # Loggers that would otherwise bring their own handlers or levels; they follow the root instead.

@@ -1,11 +1,20 @@
 import io
 import json
 import logging
+import uuid
 
+import httpx
 import pytest
+from temporalio.worker import Worker
 
+from agentic_ticket_workflow.activities import TicketActivities
+from agentic_ticket_workflow.api import app
 from agentic_ticket_workflow.config import Settings
-from agentic_ticket_workflow.logs import configure_logging
+from agentic_ticket_workflow.fake_llm import FakeChatModel
+from agentic_ticket_workflow.helpdesk import FakeHelpdesk
+from agentic_ticket_workflow.logs import ALLOWED_EXTRAS, configure_logging
+from agentic_ticket_workflow.workflow import TicketWorkflow
+from tests.test_helpdesk import ScriptedRandom
 
 LOGGERS = ("", "agentic_ticket_workflow", "temporalio", "uvicorn", "uvicorn.error", "uvicorn.access")
 
@@ -71,6 +80,13 @@ def test_ids_derived_from_temporal_activity_extra(emit):
     assert "temporal_activity" not in line
 
 
+def test_allow_list_does_not_clash_with_log_record_attributes(emit):
+    line, _ = emit("plain")
+
+    assert not set(ALLOWED_EXTRAS) & logging.makeLogRecord({}).__dict__.keys()
+    assert set(line) == {"ts", "level", "logger", "message"}
+
+
 def test_non_allow_listed_extra_is_dropped(emit):
     line, raw = emit("decided", extra={"ticket_id": "T-1", "body": "my card was charged twice"})
 
@@ -131,3 +147,48 @@ def test_log_level_setting(monkeypatch):
 
     monkeypatch.setenv("LOG_LEVEL", "debug")
     assert Settings.from_env().log_level == "DEBUG"
+
+
+async def test_t1_is_traceable_end_to_end_without_ticket_text(env, tickets, monkeypatch):
+    """FR-010 as the operator sees it: T-1 through the API at DEBUG, with one helpdesk retry."""
+    buffer = io.StringIO()
+    configure_logging("DEBUG", stream=buffer)
+    task_queue = str(uuid.uuid4())
+    monkeypatch.setattr(app.state, "temporal_client", env.client, raising=False)
+    monkeypatch.setattr(app.state, "task_queue", task_queue, raising=False)
+    # First helpdesk call fails before recording; the retry succeeds.
+    acts = TicketActivities(FakeChatModel(), FakeHelpdesk(0.5, rng=ScriptedRandom([0.0, 0.1, 0.9])))
+    t1 = tickets["T-1"]
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http:
+        async with Worker(env.client, task_queue=task_queue, workflows=[TicketWorkflow],
+                          activities=[acts.decide, acts.act]):
+            assert (await http.post("/tickets", json=t1.model_dump())).status_code == 202
+            await env.client.get_workflow_handle("ticket-T-1").result()
+            view = (await http.get("/tickets/T-1")).json()
+
+    raw = buffer.getvalue().splitlines()
+    lines = [json.loads(line) for line in raw]  # every line is JSON
+
+    ticket_lines = [line for line in lines if "ticket_id" in line or "workflow_id" in line]
+    assert ticket_lines
+    for line in ticket_lines:
+        assert (line.get("ticket_id"), line.get("workflow_id")) == ("T-1", "ticket-T-1"), line
+
+    assert any(line["message"] == "ticket submitted" for line in lines)
+    assert {line["step"] for line in lines if line["message"] == "step entered"} == {
+        "received", "deciding", "acting", "done",
+    }
+    decision = next(line for line in lines if line["message"] == "decision made")
+    assert (decision["category"], decision["priority"], decision["action"]) == ("account", "normal", "reply")
+    assert any(
+        line["level"] == "WARNING" and line.get("error_type") == "HelpdeskTemporaryError" and "ticket_id" in line
+        for line in lines
+    )
+    assert any(line["message"] == "ticket status read" for line in lines)
+
+    secrets = (t1.body, t1.subject, view["decision"]["action"]["message"])
+    for line in raw:
+        for secret in secrets:
+            # Lines are JSON: match the text as json.dumps would write it, too.
+            assert secret not in line and json.dumps(secret)[1:-1] not in line, line

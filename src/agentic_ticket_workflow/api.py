@@ -4,7 +4,8 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import timedelta
 
-from fastapi import FastAPI, HTTPException, Request, Response, status
+import uvicorn
+from fastapi import FastAPI, HTTPException, Path, Request, Response, status
 from pydantic import BaseModel
 from temporalio.client import Client, WorkflowExecutionStatus, WorkflowQueryFailedError
 from temporalio.common import WorkflowIDReusePolicy
@@ -13,19 +14,22 @@ from temporalio.exceptions import WorkflowAlreadyStartedError
 from temporalio.service import RPCError, RPCStatusCode
 
 from agentic_ticket_workflow.config import Settings
-from agentic_ticket_workflow.models import Ticket, TicketStatus
+from agentic_ticket_workflow.logs import configure_logging
+from agentic_ticket_workflow.models import IDENTIFIER_PATTERN, Ticket, TicketStatus
 from agentic_ticket_workflow.workflow import TicketWorkflow, workflow_id_for
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("agentic_ticket_workflow.api")
 
 # Temporal errors a later call may get past: the client answers 503 instead of 500.
 _UNAVAILABLE = {RPCStatusCode.UNAVAILABLE, RPCStatusCode.DEADLINE_EXCEEDED}
 
 
+def _ids(ticket_id: str, workflow_id: str) -> dict[str, str]:
+    return {"ticket_id": ticket_id, "workflow_id": workflow_id}
+
+
 def _temporal_unavailable(ticket_id: str, workflow_id: str, err: Exception) -> HTTPException:
-    log.warning(
-        "temporal unavailable ticket_id=%s workflow_id=%s error=%s", ticket_id, workflow_id, type(err).__name__
-    )
+    log.warning("temporal unavailable", extra={**_ids(ticket_id, workflow_id), "error_type": type(err).__name__})
     return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "ticket service temporarily unavailable")
 
 
@@ -69,17 +73,23 @@ async def submit_ticket(ticket: Ticket, request: Request, response: Response) ->
             id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
         )
     except WorkflowAlreadyStartedError:
+        log.info("ticket already submitted", extra=_ids(ticket.ticket_id, workflow_id))
         response.status_code = status.HTTP_200_OK
         return SubmitResponse(ticket_id=ticket.ticket_id, workflow_id=workflow_id, created=False)
     except RPCError as err:
         if err.status in _UNAVAILABLE:
             raise _temporal_unavailable(ticket.ticket_id, workflow_id, err) from err
         raise
+    log.info("ticket submitted", extra=_ids(ticket.ticket_id, workflow_id))
     return SubmitResponse(ticket_id=ticket.ticket_id, workflow_id=workflow_id, created=True)
 
 
 @app.get("/tickets/{ticket_id}", response_model=TicketView)
-async def get_ticket(ticket_id: str, request: Request) -> TicketView:
+async def get_ticket(
+    request: Request,
+    # Same rule as Ticket.ticket_id: arbitrary path text never reaches a log line.
+    ticket_id: str = Path(pattern=IDENTIFIER_PATTERN),
+) -> TicketView:
     client: Client = request.app.state.temporal_client
     workflow_id = workflow_id_for(ticket_id)
     handle = client.get_workflow_handle_for(TicketWorkflow.run, workflow_id)
@@ -87,6 +97,7 @@ async def get_ticket(ticket_id: str, request: Request) -> TicketView:
         description = await handle.describe(rpc_timeout=timedelta(seconds=5))
     except RPCError as err:
         if err.status == RPCStatusCode.NOT_FOUND:
+            log.info("ticket not found", extra=_ids(ticket_id, workflow_id))
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"ticket {ticket_id} not found") from err
         if err.status in _UNAVAILABLE:
             raise _temporal_unavailable(ticket_id, workflow_id, err) from err
@@ -101,4 +112,18 @@ async def get_ticket(ticket_id: str, request: Request) -> TicketView:
         except (WorkflowQueryFailedError, RPCError) as err:  # no worker, query timeout or a query failure
             raise _temporal_unavailable(ticket_id, workflow_id, err) from err
 
-    return TicketView(**ticket_status.model_dump(), status=description.status.name.lower())
+    view = TicketView(**ticket_status.model_dump(), status=description.status.name.lower())
+    log.debug("ticket status read", extra={**_ids(ticket_id, workflow_id), "status": view.status, "step": view.step})
+    return view
+
+
+def serve() -> None:
+    """API entrypoint: configure JSON logging before uvicorn starts, so its own lines are JSON too."""
+    settings = Settings.from_env()
+    configure_logging(settings.log_level)
+    # log_config=None: uvicorn leaves logging to us. No access log: the ticket lines above replace it.
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_config=None, access_log=False)
+
+
+if __name__ == "__main__":
+    serve()

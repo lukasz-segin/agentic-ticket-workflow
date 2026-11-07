@@ -267,22 +267,22 @@ The Dockerfile CMD changes from the `uvicorn` CLI to `python -m agentic_ticket_w
 
 #### Automated
 
-- [x] 1.1 Logging unit tests pass: `uv run pytest tests/test_logs.py`
-- [x] 1.2 Full suite still passes: `uv run pytest`
+- [x] 1.1 Logging unit tests pass: `uv run pytest tests/test_logs.py` — 5642234
+- [x] 1.2 Full suite still passes: `uv run pytest` — 5642234
 
 #### Manual
 
-- [x] 1.3 Reading `logs.py` confirms the allow-list is the only way an extra reaches the output
+- [x] 1.3 Reading `logs.py` confirms the allow-list is the only way an extra reaches the output — 5642234
 
 ### Phase 2: Wire entry points and emit ticket lines
 
 #### Automated
 
-- [ ] 2.1 Full suite passes, including the end-to-end trace test: `uv run pytest`
-- [ ] 2.2 Image builds with the new API entrypoint: `docker compose build`
+- [x] 2.1 Full suite passes, including the end-to-end trace test: `uv run pytest`
+- [x] 2.2 Image builds with the new API entrypoint: `docker compose build`
 
 #### Manual
 
-- [ ] 2.3 `docker compose up` + T-1: JSON-only logs, full trace by `grep T-1`, no ticket text
-- [ ] 2.4 Retried ticket shows a WARNING line with `error_type` and both IDs
-- [ ] 2.5 `LOG_LEVEL=DEBUG`: our DEBUG lines appear, no `temporalio` DEBUG lines
+- [x] 2.3 `docker compose up` + T-1: JSON-only logs, full trace by `grep T-1`, no ticket text
+- [x] 2.4 Retried ticket shows a WARNING line with `error_type` and both IDs
+- [x] 2.5 `LOG_LEVEL=DEBUG`: our DEBUG lines appear, no `temporalio` DEBUG lines
