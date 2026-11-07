@@ -23,6 +23,8 @@ uv run agentic-ticket-workflow   # console script -> agentic_ticket_workflow:mai
 
 **Test command:** `uv run pytest` (all tests; no network and no API key, FR-011). The first run downloads Temporal's test server once and caches it.
 
+**Lint/format:** `uv run ruff check` and `uv run ruff format --check` must pass before a commit (config in `pyproject.toml`). Fix with `uv run ruff check --fix` and `uv run ruff format`.
+
 ## Target architecture
 
 These constraints come from the assignment and the PRD.

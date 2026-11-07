@@ -5,7 +5,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from agentic_ticket_workflow.models import Decision, DecideResult, Ticket, ToolCall
+from agentic_ticket_workflow.models import DecideResult, Decision, Ticket, ToolCall
 from agentic_ticket_workflow.tools import TOOL_SCHEMAS, run_tool
 
 
