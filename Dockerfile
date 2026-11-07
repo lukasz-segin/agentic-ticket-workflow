@@ -25,4 +25,4 @@ RUN useradd --uid 10001 --no-create-home app
 USER app
 
 EXPOSE 8000
-CMD ["uvicorn", "agentic_ticket_workflow.api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "agentic_ticket_workflow.api"]

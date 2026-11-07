@@ -5,7 +5,8 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field
 
 # IDs become part of workflow IDs and helpdesk keys: keep them short and plain.
-Identifier = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
+IDENTIFIER_PATTERN = r"^[A-Za-z0-9_-]{1,64}$"
+Identifier = Annotated[str, Field(pattern=IDENTIFIER_PATTERN)]
 
 Category = Literal["account", "billing", "technical", "other"]
 Priority = Literal["low", "normal", "high", "urgent"]

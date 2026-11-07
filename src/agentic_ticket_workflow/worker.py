@@ -11,12 +11,13 @@ from agentic_ticket_workflow.activities import TicketActivities
 from agentic_ticket_workflow.config import Settings
 from agentic_ticket_workflow.fake_llm import FakeChatModel
 from agentic_ticket_workflow.helpdesk import FakeHelpdesk
+from agentic_ticket_workflow.logs import configure_logging
 from agentic_ticket_workflow.workflow import TicketWorkflow
 
 
 async def main() -> None:
-    logging.basicConfig(level=logging.INFO)
     settings = Settings.from_env()
+    configure_logging(settings.log_level)
     # A failed connection raises and exits non-zero; compose's restart policy retries.
     client = await Client.connect(
         settings.temporal_address,
@@ -30,7 +31,7 @@ async def main() -> None:
         workflows=[TicketWorkflow],
         activities=[acts.decide, acts.act],
     )
-    logging.getLogger(__name__).info("worker started on task queue %s", settings.task_queue)
+    logging.getLogger("agentic_ticket_workflow.worker").info("worker started on task queue %s", settings.task_queue)
     await worker.run()
 
 

@@ -3,7 +3,7 @@ project: "Northdesk Agentic Ticket Workflow"
 version: 1
 status: active                   # draft | active | locked
 created: 2026-11-06
-updated: 2026-11-06
+updated: 2026-11-07
 prd_version: 1
 main_goal: speed
 top_blocker: time
@@ -42,7 +42,7 @@ Northdesk's support team triages every ticket by hand. That means repetitive wor
 | ID   | Change ID                   | Outcome (user can …)                                                                                     | Prerequisites | PRD refs                                                | Status   | Issue |
 | ---- | --------------------------- | -------------------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------- | -------- | ----- |
 | S-01 | first-ticket-answered       | Support agent can submit T-1, get its ID at once, and read its step, decision and KB-1 reply             | —             | US-01, FR-001, FR-002, FR-003, FR-004, FR-009, FR-011   | done     | [#1](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/1) |
-| S-02 | ticket-traceable-in-logs    | Operator can follow one ticket through API, workflow and activity logs by ticket ID and workflow ID      | S-01          | FR-010                                                  | proposed | [#2](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/2) |
+| S-02 | ticket-traceable-in-logs    | Operator can follow one ticket through API, workflow and activity logs by ticket ID and workflow ID      | S-01          | FR-010                                                  | in-progress | [#2](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/2) |
 | S-03 | example-tickets-triaged     | Support agent sees T-3, T-4, T-5 get their expected decisions and T-7 escalated as `unknown_customer`    | S-01          | FR-004, FR-008, FR-009                                  | proposed | [#3](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/3) |
 | S-04 | injection-escalated         | Support agent sees T-6's rule-breaking refund turned into an escalation naming the broken rule           | S-01          | US-03, FR-005, FR-011                                   | proposed | [#4](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/4) |
 | S-05 | refund-approved-or-rejected | Support agent can approve or reject T-2's waiting refund; an approved refund is issued exactly once      | S-04          | US-02, FR-006, FR-007, FR-011                           | proposed | [#5](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/5) |
@@ -105,7 +105,7 @@ None. The deploy layer is present, and each missing cross-cutting piece is intro
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Sequenced right after S-01, so later slices log through the same helper and don't need a retrofit. Risk: log calls inside workflow code must stay replay-safe. Carry-over from the S-01 review (F8): read `LOG_LEVEL`. It is set in compose and `.env.example`, but `worker.py` hardcodes INFO and the API configures no logging. Follow the lesson "Ticket text hides in derived payloads": never log `tool_calls`, decisions or model-text errors verbatim.
-- **Status:** proposed
+- **Status:** in-progress
 
 ### S-03: Remaining example tickets triaged
 
