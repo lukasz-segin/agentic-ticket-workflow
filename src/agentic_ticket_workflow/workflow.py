@@ -25,8 +25,16 @@ ACT_RETRY = RetryPolicy(
 )
 
 
+WORKFLOW_ID_PREFIX = "ticket-"
+
+
 def workflow_id_for(ticket_id: str) -> str:
-    return f"ticket-{ticket_id}"
+    return f"{WORKFLOW_ID_PREFIX}{ticket_id}"
+
+
+def ticket_id_from(workflow_id: str) -> str | None:
+    """Inverse of `workflow_id_for`; `None` for a workflow ID we did not mint."""
+    return workflow_id.removeprefix(WORKFLOW_ID_PREFIX) if workflow_id.startswith(WORKFLOW_ID_PREFIX) else None
 
 
 @workflow.defn
