@@ -20,7 +20,7 @@ from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
 from agentic_ticket_workflow.activities import TicketActivities, check
-from agentic_ticket_workflow.agent import ModelUnavailable
+from agentic_ticket_workflow.agent import ModelRequestRejected, ModelUnavailable
 from agentic_ticket_workflow.fake_llm import FakeChatModel
 from agentic_ticket_workflow.helpdesk import FakeHelpdesk
 from agentic_ticket_workflow.models import (
@@ -47,7 +47,7 @@ from agentic_ticket_workflow.workflow import (
     ticket_id_from,
     workflow_id_for,
 )
-from tests.fakes import CountingHelpdesk, ScriptedRandom
+from tests.fakes import CountingHelpdesk, ScriptedRandom, StubProvider
 
 T1_REPLY = ReplyAction(message="Reset your password: ...", article_ids=["KB-1"])
 # A valid refund: C-100's own invoice, for no more than its amount.
@@ -486,6 +486,36 @@ async def test_model_failure_escalates_after_the_retry_limit(env, tickets, model
     assert status.violation is None
     assert status.tool_calls == []
     assert status.result.action == EscalateAction(reason=code)
+
+
+class RejectingModel:
+    """A provider that refuses the request, e.g. a wrong API key."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, messages, tools):
+        self.calls += 1
+        raise ModelRequestRejected("401", error_type="AuthenticationError")
+
+
+async def test_rejected_model_request_escalates_after_one_attempt(env, tickets):
+    model = RejectingModel()
+    status = await run_with_model(env, tickets["T-1"], model)
+
+    assert model.calls == 1  # non-retryable: no second attempt with the same key
+    assert status.steps == ["received", "deciding", "acting", "done"]
+    assert status.decision is None
+    assert status.result.action == EscalateAction(reason="llm_unavailable")
+
+
+async def test_malformed_real_provider_response_escalates_after_the_retry_limit(env, tickets):
+    provider = StubProvider(b'{"choices": [{"message": null}]}')
+    status = await run_with_model(env, tickets["T-1"], provider.model)
+
+    assert provider.calls == DECIDE_RETRY.maximum_attempts
+    assert status.decision is None
+    assert status.result.action == EscalateAction(reason="unreadable_model_answer")
 
 
 def _decide_error(cause: BaseException) -> ActivityError:

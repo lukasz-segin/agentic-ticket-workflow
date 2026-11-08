@@ -15,12 +15,26 @@ class ChatModel(Protocol):
         """Return an OpenAI-shaped assistant message: {"role", "content", "tool_calls"}.
 
         Raise `ModelUnavailable` when the provider can't answer (network, server or rate-limit errors),
-        so the ticket is escalated with `llm_unavailable` once the retries run out (FR-008)."""
+        so the ticket is escalated with `llm_unavailable` once the retries run out (FR-008). Raise
+        `ModelRequestRejected` when a retry can't help (bad key, unknown model): it escalates at once.
+        Raise `UnreadableModelAnswer` for a response that isn't a usable assistant message."""
         ...
 
 
-class ModelUnavailable(Exception):
+class _ModelError(Exception):
+    """A provider failure. `error_type` names it for the logs; the message is never logged: it may quote the request."""
+
+    def __init__(self, message: str = "", *, error_type: str | None = None) -> None:
+        super().__init__(message)
+        self.error_type = error_type or type(self).__name__
+
+
+class ModelUnavailable(_ModelError):
     """The model provider can't be reached or can't answer right now; a retry may succeed."""
+
+
+class ModelRequestRejected(_ModelError):
+    """The provider refused the request (bad key, unknown model, rejected input); a retry won't help."""
 
 
 class UnreadableModelAnswer(Exception):

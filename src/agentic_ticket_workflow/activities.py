@@ -42,9 +42,13 @@ class TicketActivities:
             # Fixed message, `from None`: the cause would carry model text into Temporal history.
             raise ApplicationError("model answer unreadable", type=UNREADABLE_MODEL_ANSWER) from None
         except agent.ModelUnavailable as exc:
-            log.info("model unavailable", extra={"reason_code": LLM_UNAVAILABLE, "error_type": type(exc).__name__})
+            log.info("model unavailable", extra={"reason_code": LLM_UNAVAILABLE, "error_type": exc.error_type})
             # Retryable: the provider may recover. A provider message may quote the request, so drop it.
             raise ApplicationError("model unavailable", type=LLM_UNAVAILABLE) from None
+        except agent.ModelRequestRejected as exc:
+            log.info("model request rejected", extra={"reason_code": LLM_UNAVAILABLE, "error_type": exc.error_type})
+            # Non-retryable: asking again with the same key or model fails the same way. Escalate at once.
+            raise ApplicationError("model request rejected", type=LLM_UNAVAILABLE, non_retryable=True) from None
         log.info("model decided", extra={"tools": [call.name for call in result.tool_calls]})
         return result
 

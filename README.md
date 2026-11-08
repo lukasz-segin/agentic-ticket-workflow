@@ -67,6 +67,29 @@ The fake model (`src/agentic_ticket_workflow/fake_llm.py`) is simple and rule-ba
 
 A ticket that matches no rule escalates with `no_matching_rule`, a reply rule with no KB hit escalates with `no_kb_article`, and a refund rule for a customer with no invoices escalates with `no_invoice`, so a person sees it. The refund rule is deliberately naive: it believes an amount written in the ticket, as a model following injected instructions would, so T-6 proposes 5000 EUR and the decision rules below have something to stop. Limits: keywords are case-insensitive substring matches (`down` also matches `download`), and the rules were written with the example tickets in mind. It is a stand-in for running with no key, not a classifier.
 
+### Real model
+
+`LLM_MODE=openai` sends the same tool loop to any OpenAI-compatible Chat Completions endpoint (`src/agentic_ticket_workflow/openai_llm.py`). Three settings choose it:
+
+| Provider | `LLM_BASE_URL` | `LLM_MODEL` | `LLM_API_KEY` |
+| --- | --- | --- | --- |
+| OpenAI | `https://api.openai.com/v1` | a model with tool calling and JSON mode, e.g. `gpt-4.1-mini` (used for the smoke run) | your key |
+| Azure OpenAI | `https://<resource>.openai.azure.com/openai/v1/` | the deployment name | the resource key |
+| Ollama on the host | `http://host.docker.internal:11434/v1` | e.g. `llama3.1` | empty |
+
+Put them in a `.env` (compose reads it; it is gitignored) or set them for one run:
+
+```sh
+LLM_MODE=openai LLM_BASE_URL=https://api.openai.com/v1 LLM_MODEL=gpt-4.1-mini LLM_API_KEY=sk-... \
+  docker compose up --build
+```
+
+- The worker checks these settings at startup. In `openai` mode an empty `LLM_BASE_URL` or `LLM_MODEL`, or a mode other than `fake` or `openai`, stops the worker with an error naming the setting (the key is never printed). The API doesn't read them, so it keeps serving either way. The worker log's first line names the mode: `worker started on task queue tickets, LLM mode openai`.
+- Every call asks for JSON (`response_format: json_object`), and the answer is still parsed strictly as a `Decision`, so the same rules check it. The model must support tool calling and JSON mode.
+- Each call has a 20 s timeout and no SDK retries: Temporal's `decide` retry policy is the only retry (see below). One `decide` makes at most 6 model calls (the step limit).
+- A provider error, a malformed response body or an unusable answer never puts provider or model text in the logs or in Temporal history. The log carries the reason code and, for a provider error, the error type, e.g. `"error_type": "AuthenticationError"`.
+- The decisions can differ from the fake model's expected outcomes for T-1…T-7. The rule checks and the refund approval still bound whatever the model decides.
+
 ### Decision rules
 
 Every decision is checked in plain Python (`src/agentic_ticket_workflow/rules.py`) before anything is acted on. A decision that breaks a rule is not carried out. The ticket is escalated instead, with the broken rule's code as the reason, and the code is shown as `violation` in `GET /tickets/{id}`. The ticket text is never trusted: whatever it tells the model, the rules run in code on the model's output.
@@ -95,9 +118,9 @@ Some tickets can't be decided at all. Those tickets are escalated with a reason 
 | --- | --- |
 | `unknown_customer` | the ticket's customer doesn't exist (T-7). Checked in code before the model is called, so `decide` is not retried. |
 | `unreadable_model_answer` | the model's answer is still unusable after 3 `decide` attempts: it doesn't parse as a decision, a tool call is malformed, or no decision comes within the 6-step tool loop. |
-| `llm_unavailable` | the model provider is still failing after 3 `decide` attempts, or the last attempt hit the 60 s `decide` timeout. |
+| `llm_unavailable` | the model provider is still failing after 3 `decide` attempts (unreachable, timed out, rate-limited or a server error), or the last attempt hit the 60 s `decide` timeout. A request the provider rejects (bad key, unknown model, other 4xx) escalates after one attempt, since a retry fails the same way. |
 
-`decide` is retried up to 3 times in all, with backoff (1 s, then 2 s), because a model may answer properly, or a provider may recover, on the next try. The limit is fixed in code (`DECIDE_RETRY` in `workflow.py`). Any other `decide` error, such as a bug in the code, still fails the ticket. The fake model never fails, so these two escalations are shown by the tests (`tests/test_workflow.py`), not in the compose demo.
+`decide` is retried up to 3 times in all, with backoff (1 s, then 2 s), because a model may answer properly, or a provider may recover, on the next try. The limit is fixed in code (`DECIDE_RETRY` in `workflow.py`). Any other `decide` error, such as a bug in the code, still fails the ticket. The fake model can't fail, so in the fake-mode compose demo these escalations appear only in the tests (`tests/test_workflow.py`). A real provider can: a wrong `LLM_API_KEY` shows `llm_unavailable` on the next ticket.
 
 ### Failed tickets
 
@@ -143,6 +166,8 @@ uv run ruff format --check # formatting (drop --check to reformat)
 - The API has no auth. Anyone who can reach it can approve a refund, and the `approver` name is whatever the caller sends. It is logged unverified, as an audit trail.
 - The approval comment is free text, so it is kept only in the ticket status (`approval` in `GET /tickets/{id}`, stored in Temporal history), never in the logs.
 - The approval deadline is fixed at 24 h; it is not configurable.
+- **With a real model, the provider sees the ticket text** and the customer, invoice and KB data the tools return. Its decisions are not reproducible; the rule checks and the approval step are what bound them.
+- **A `decide` timeout doesn't stop the model calls already under way.** The tool loop runs in a worker thread, and Temporal's 60 s timeout abandons the attempt without stopping that thread. The thread can go on for up to its 6 model calls (20 s each at most) while the retry runs, or after the ticket has escalated. Its result is discarded, so no action comes of it, but the provider usage and the worker's shutdown time can exceed the attempt.
 - **Workflow code changes are not versioned.** Adding the approval timer changed the workflow in a way Temporal can't replay for workflows started under older code. A refund already waiting in a local dev server from before the change may fail replay after an upgrade. Reset with `docker compose down -v`, then `docker compose up --build`. This **deletes all local ticket histories** (the `temporal-data` volume); a plain `docker compose down` keeps them.
 
 ## Azure deployment
