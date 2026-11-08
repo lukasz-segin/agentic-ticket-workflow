@@ -301,7 +301,9 @@ async def test_approval_just_before_the_deadline_is_honoured(env, tickets):
 async def test_approval_queued_during_worker_downtime_after_the_deadline_is_refused(env, tickets):
     # The worker is down when the deadline passes and an approval is queued meanwhile. The new worker gets
     # the overdue timer and the Update together, and the SDK runs the Update first, while the step still
-    # says "awaiting_approval": only the validator's deadline check refuses it.
+    # says "awaiting_approval": only the validator's deadline check refuses it. Negative control (2026-11-08):
+    # with that check removed this test failed 3/3 (the overdue approval was accepted), so the same-activation
+    # order was observed.
     act_calls: list[ActRequest] = []
     activities = fake_activities(T2_DECISION, act_calls)
     task_queue = str(uuid.uuid4())

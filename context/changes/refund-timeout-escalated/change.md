@@ -1,9 +1,9 @@
 ---
 change_id: refund-timeout-escalated
 title: Refund timeout escalated
-status: implemented
+status: impl_reviewed
 created: 2026-11-07
-updated: 2026-11-07
+updated: 2026-11-08
 archived_at: null
 ---
 
