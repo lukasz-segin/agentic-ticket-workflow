@@ -66,8 +66,20 @@ class OpenAIChatModel:
             message = _Completion.model_validate_json(raw.text).choices[0].message
         except ValidationError as exc:  # also covers a body that isn't JSON
             raise agent.UnreadableModelAnswer(f"response does not parse: {exc.error_count()} error(s)") from None
-        # Only these keys go back into the conversation: stricter servers reject the extras the SDK adds.
-        return {"role": "assistant", "content": message.content, "tool_calls": message.tool_calls or None}
+        # Only these keys go back into the conversation: stricter servers reject response-only extras.
+        tool_calls = [_echoed(call) for call in message.tool_calls or []]
+        return {"role": "assistant", "content": message.content, "tool_calls": tool_calls or None}
+
+
+def _echoed(call: dict[str, Any]) -> dict[str, Any]:
+    """The tool call trimmed to the keys a request may carry; a malformed one stays malformed for `decide`."""
+    echoed = {key: call[key] for key in ("id", "type") if key in call}
+    function = call.get("function")
+    if isinstance(function, dict):
+        echoed["function"] = {key: function[key] for key in ("name", "arguments") if key in function}
+    elif "function" in call:
+        echoed["function"] = function
+    return echoed
 
 
 def _retryable(status: int) -> bool:

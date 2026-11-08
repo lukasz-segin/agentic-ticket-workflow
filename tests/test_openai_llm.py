@@ -17,10 +17,10 @@ T1_DECISION = (
 
 
 def test_t1_decided_through_the_tool_loop_with_a_stubbed_provider(tickets):
-    provider = StubProvider(
-        completion(tool_calls=[tool_call("call_1", "get_customer", {"customer_id": "C-100"})]),
-        completion(content=T1_DECISION),
-    )
+    call = tool_call("call_1", "get_customer", {"customer_id": "C-100"})
+    call["index"] = 0  # response-only fields a provider may add, at both levels
+    call["function"]["provider_extra"] = "response-only"
+    provider = StubProvider(completion(tool_calls=[call]), completion(content=T1_DECISION))
 
     result = decide(tickets["T-1"], provider.model)
 
@@ -32,10 +32,13 @@ def test_t1_decided_through_the_tool_loop_with_a_stubbed_provider(tickets):
         assert body["model"] == "test-model"
         assert body["tools"] == TOOL_SCHEMAS
         assert body["response_format"] == {"type": "json_object"}
-    # The second request carries the assistant's tool call (trimmed to the three keys), then its result.
+    # The second request carries the assistant's tool call (trimmed to the planned keys), then its result.
     assistant, result_message = provider.requests[1]["messages"][-2:]
     assert assistant.keys() == {"role", "content", "tool_calls"}
-    assert assistant["tool_calls"][0]["id"] == "call_1"
+    [echoed] = assistant["tool_calls"]
+    assert echoed.keys() == {"id", "type", "function"}
+    assert echoed["function"].keys() == {"name", "arguments"}
+    assert echoed["id"] == "call_1"
     assert result_message["role"] == "tool" and result_message["tool_call_id"] == "call_1"
 
 
