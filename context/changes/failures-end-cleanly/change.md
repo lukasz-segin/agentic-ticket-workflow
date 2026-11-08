@@ -1,7 +1,7 @@
 ---
 change_id: failures-end-cleanly
 title: Failures end cleanly
-status: implementing
+status: impl_reviewed
 created: 2026-11-08
 updated: 2026-11-08
 ---
