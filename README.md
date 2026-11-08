@@ -1,6 +1,6 @@
 # agentic-ticket-workflow
 
-An AI triage service for Northdesk's support tickets. For each ticket a model proposes a category, a priority and one action, using three lookup tools (customer, invoices, knowledge base). Code checks that proposal against fixed rules, a person approves every refund, and a fake helpdesk carries the action out. The model proposes; the code decides. It runs locally with one command and no API key.
+An AI triage service for Northdesk's support tickets: for each ticket a model proposes a category, a priority and one action, using three lookup tools (customer, invoices, knowledge base). Code checks that proposal against fixed rules, a person approves every refund, and a fake helpdesk carries the action out, so the model proposes and the code decides. It runs locally with one command and no API key.
 
 ## Quick start
 
@@ -33,30 +33,41 @@ Submitting the same `ticket_id` again returns `200` with `"created": false`, whe
 
 ### All seven example tickets
 
-The command below submits T-1…T-7 from the packaged sample data (`src/agentic_ticket_workflow/data/tickets.json`) and polls each ticket until it is at `done`, `failed` or `awaiting_approval`, for at most 60 s. It runs Python inside the `api` container, so the host needs nothing but Docker. The table after it describes a fresh ticket history, started with `HELPDESK_FAILURE_RATE=0` (the second start command above). A ticket ID that was already used returns its earlier execution (`"created": false`): a T-1 from the walk-through above is harmless, but a T-2 that was already approved shows `done`. To start over, run `docker compose down -v` (this deletes all local ticket histories) and start again.
+The command below submits T-1…T-7 from the packaged sample data (`src/agentic_ticket_workflow/data/tickets.json`) and polls each ticket until it has ended (`done` or `failed`) or waits at `awaiting_approval`, for at most 60 s. It runs Python inside the `api` container, so the host needs nothing but Docker. The table after it describes a fresh ticket history, started with `HELPDESK_FAILURE_RATE=0` (the second start command above). A ticket ID that was already used returns its earlier execution (`"created": false`): a T-1 from the walk-through above is harmless, but a T-2 that was already approved shows `done`. To start over, run `docker compose down -v` (this deletes all local ticket histories) and start again.
 
 ```sh
 docker compose exec -T api python - <<'EOF'
-import json, time, urllib.error, urllib.request
+import json, time, urllib.request
 from importlib.resources import files
 
 API = "http://localhost:8000/tickets"
 tickets = json.loads((files("agentic_ticket_workflow") / "data" / "tickets.json").read_text())
+deadline = time.monotonic() + 60  # for submitting and polling together
+def left():  # each request's timeout: the time left, so a stalled request can't overrun the deadline
+    return max(0.1, deadline - time.monotonic())
+
 for t in tickets:
     req = urllib.request.Request(API, json.dumps(t).encode(), {"content-type": "application/json"})
-    with urllib.request.urlopen(req) as r:
-        print(t["ticket_id"], r.status, "created" if json.load(r)["created"] else "already submitted")
+    while True:
+        try:
+            with urllib.request.urlopen(req, timeout=left()) as r:
+                print(t["ticket_id"], r.status, "created" if json.load(r)["created"] else "already submitted")
+            break
+        except OSError:  # API or Temporal still starting (HTTPError and URLError are OSErrors)
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(1)
 
-views, pending, deadline = {}, [t["ticket_id"] for t in tickets], time.monotonic() + 60
+views, pending = {}, [t["ticket_id"] for t in tickets]
 while pending and time.monotonic() < deadline:
     time.sleep(1)
     for tid in list(pending):
         try:
-            with urllib.request.urlopen(f"{API}/{tid}") as r:
+            with urllib.request.urlopen(f"{API}/{tid}", timeout=left()) as r:
                 views[tid] = json.load(r)
-        except urllib.error.HTTPError:
-            continue  # not readable yet, e.g. the worker is still starting
-        if views[tid]["step"] in ("done", "failed", "awaiting_approval"):
+        except OSError:
+            continue  # not readable yet, e.g. the API or worker is still starting
+        if views[tid]["status"] != "running" or views[tid]["step"] == "awaiting_approval":
             pending.remove(tid)
 
 for tid in (t["ticket_id"] for t in tickets):
@@ -75,7 +86,7 @@ for tid in (t["ticket_id"] for t in tickets):
 EOF
 ```
 
-Expected result in fake mode with `HELPDESK_FAILURE_RATE=0` (the outcomes the PRD sets for the example tickets, also pinned by `tests/test_workflow.py`):
+Expected result in fake mode with `HELPDESK_FAILURE_RATE=0` (the outcomes the PRD sets for the example tickets, also pinned by the tests in `tests/`):
 
 | Ticket | `step` | Category / priority | Action carried out | Reason / detail |
 | --- | --- | --- | --- | --- |
@@ -125,7 +136,6 @@ flowchart LR
     api -- "start · query · Update" --> temporal
 
     subgraph worker["Worker: TicketWorkflow"]
-        direction TB
         decide["decide (activity)"]
         check["check (activity)"]
         wait{{"approval wait<br/>24 h timer"}}
@@ -136,10 +146,11 @@ flowchart LR
         check -- "awaiting_approval<br/>(valid refund)" --> wait
         check -- "acting" --> act
         wait -- "acting" --> act
-        act --> final
+        act -- "done / failed" --> final
     end
 
     temporal -- "received → deciding<br/>(task queue tickets)" --> decide
+    temporal -. "approval Update" .-> wait
     llm["LLM: fake or<br/>OpenAI-compatible"]
     data[("data files: customers,<br/>invoices, KB articles")]
     helpdesk["fake helpdesk"]
@@ -158,7 +169,7 @@ How one ticket moves through the `step` values that `GET /tickets/{ticket_id}` s
 5. `acting`: the `act` activity performs the one checked action through the helpdesk.
 6. `done`, or `failed` with `helpdesk_unavailable` when the helpdesk still fails after the last retry (see [Reliability](#reliability)).
 
-`GET /tickets/{ticket_id}` reads the stored workflow result once a ticket has completed, and otherwise asks the running workflow through a Temporal query, which needs a running worker.
+`GET /tickets/{ticket_id}` reads the stored workflow result once a ticket has completed, and otherwise (running or failed) through a Temporal query, which needs a running worker.
 
 Where each part runs, and why:
 
@@ -289,7 +300,7 @@ A ticket that matches no rule escalates with `no_matching_rule`, a reply rule wi
 | Azure OpenAI | `https://<resource>.openai.azure.com/openai/v1/` | the deployment name | the resource key |
 | Ollama on the host | `http://host.docker.internal:11434/v1` | e.g. `llama3.1` | empty |
 
-Put them in a `.env` (compose reads it; it is gitignored) or set them for one run:
+Put them in a `.env` (compose reads it; it is gitignored) or set them for one run. Keep the key in `.env`: one typed on the command line stays in your shell history.
 
 ```sh
 LLM_MODE=openai LLM_BASE_URL=https://api.openai.com/v1 LLM_MODEL=gpt-4.1-mini LLM_API_KEY=sk-... \
@@ -424,7 +435,7 @@ The task leaves these open; the PRD (`context/foundation/prd.md`) fixes them, an
 
 - **Duplicate detection lasts only as long as Temporal's retention period** (24 h after a ticket closes). See [Duplicate requests](#duplicate-requests).
 - **The fake helpdesk keeps its idempotency keys in memory, per worker process**, so a worker restart can repeat an interrupted action, and only one worker may run. See [Worker restarts](#worker-restarts).
-- **A `check` that runs out of attempts has no reason code.** The workflow fails with `step` still `checking` and `failure_reason` `null` (see [Reliability](#reliability)).
+- **An unlisted `decide` error or a `check` that runs out of attempts has no reason code.** The workflow fails with `step` still `deciding` or `checking` and `failure_reason` `null` (see [Reliability](#reliability)).
 - The API has no auth. Anyone who can reach it can approve a refund, and the `approver` name is whatever the caller sends. It is logged unverified, as an audit trail. In production the API would require Entra ID (OAuth2) bearer tokens, approvals would be limited to an approver role with the approver taken from the token instead of the request body, and the API would sit behind private ingress or API Management.
 - The approval comment is free text, so it is kept only in the ticket status (`approval` in `GET /tickets/{id}`, stored in Temporal history), never in the logs.
 - The approval deadline is fixed at 24 h; it is not configurable.
@@ -441,4 +452,4 @@ The task leaves these open; the PRD (`context/foundation/prd.md`) fixes them, an
 - Add auth as described under Known limitations.
 - Keep idempotency on the real helpdesk's side, so a worker restart can't repeat an action. Then run more than one worker.
 - Version workflow changes (Temporal patching) before changing workflow code that running tickets depend on.
-- Map `check` running out of attempts to a reason code, so the ticket ends with a reason like any other.
+- Map an unlisted `decide` error and a `check` that runs out of attempts to a reason code, so the ticket ends with a reason like any other.
