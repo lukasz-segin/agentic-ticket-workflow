@@ -15,7 +15,7 @@ from agentic_ticket_workflow.fake_llm import FakeChatModel
 from agentic_ticket_workflow.helpdesk import FakeHelpdesk
 from agentic_ticket_workflow.logs import ALLOWED_EXTRAS, configure_logging
 from agentic_ticket_workflow.workflow import TicketWorkflow
-from tests.fakes import ScriptedRandom
+from tests.fakes import ScriptedRandom, StubProvider
 
 LOGGERS = ("", "agentic_ticket_workflow", "temporalio", "uvicorn", "uvicorn.error", "uvicorn.access")
 
@@ -225,4 +225,29 @@ async def test_failed_ticket_logs_its_reason_with_the_ids_and_no_ticket_text(env
     assert (failed[0]["message"], failed[0]["action"]) == ("ticket failed", "reply")
     for line in raw:
         for secret in (t1.body, t1.subject):
+            assert secret not in line and json.dumps(secret)[1:-1] not in line, line
+
+
+async def test_rejected_model_request_logs_the_error_type_and_no_provider_text(env, tickets):
+    """A wrong key: one line with the SDK's error type, never the provider's message or the ticket text."""
+    buffer = io.StringIO()
+    configure_logging("INFO", stream=buffer)
+    provider_secret = "Incorrect API key provided: sk-abc123"
+    provider = StubProvider((401, {"error": {"message": provider_secret}}))
+    acts = TicketActivities(provider.model, FakeHelpdesk(0.0))
+    task_queue = str(uuid.uuid4())
+    t1 = tickets["T-1"]
+
+    async with Worker(
+        env.client, task_queue=task_queue, workflows=[TicketWorkflow], activities=[acts.decide, check, acts.act]
+    ):
+        await env.client.execute_workflow(TicketWorkflow.run, t1, id="ticket-T-1", task_queue=task_queue)
+
+    raw = buffer.getvalue().splitlines()
+    rejected = [line for line in map(json.loads, raw) if line.get("message") == "model request rejected"]
+    assert len(rejected) == 1
+    assert (rejected[0]["ticket_id"], rejected[0]["workflow_id"]) == ("T-1", "ticket-T-1")
+    assert (rejected[0]["reason_code"], rejected[0]["error_type"]) == ("llm_unavailable", "AuthenticationError")
+    for line in raw:
+        for secret in (t1.body, t1.subject, provider_secret, "test-key"):
             assert secret not in line and json.dumps(secret)[1:-1] not in line, line
