@@ -12,8 +12,9 @@ Identifier = Annotated[str, Field(pattern=IDENTIFIER_PATTERN)]
 
 Category = Literal["account", "billing", "technical", "other"]
 Priority = Literal["low", "normal", "high", "urgent"]
-# A valid refund waits at "awaiting_approval" between "checking" and "acting".
-Step = Literal["received", "deciding", "checking", "awaiting_approval", "acting", "done"]
+# A valid refund waits at "awaiting_approval" between "checking" and "acting". A ticket whose action
+# the helpdesk never confirmed ends at "failed" instead of "done" (FR-007).
+Step = Literal["received", "deciding", "checking", "awaiting_approval", "acting", "done", "failed"]
 
 
 class Ticket(BaseModel):
@@ -117,3 +118,6 @@ class TicketStatus(BaseModel):
     approval_deadline: datetime | None = None
     approval: Approval | None = None
     result: ActionResult | None = None
+    # Set when the ticket fails (FR-007), e.g. `helpdesk_unavailable`: the helpdesk never confirmed the action
+    # (it may or may not have been carried out, but never twice: retries reuse one idempotency key).
+    failure_reason: str | None = None

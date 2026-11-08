@@ -1,4 +1,4 @@
-"""The durable per-ticket process (FR-001…FR-006): decide → check → approval wait (refunds only) → act.
+"""The durable per-ticket process (FR-001…FR-008): decide → check → approval wait (refunds only) → act.
 
 The status is queryable. A valid refund waits at `awaiting_approval` until the `approve` Update records a
 person's answer, for at most 24 h; then it is escalated with `approval_timeout`. The Update's validator
@@ -12,6 +12,7 @@ from datetime import timedelta
 from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ActivityError, ApplicationError
+from temporalio.exceptions import TimeoutError as ActivityTimeoutError
 
 with workflow.unsafe.imports_passed_through():
     from agentic_ticket_workflow import rules
@@ -39,10 +40,17 @@ ACT_RETRY = RetryPolicy(
 )
 
 
-# Non-retryable activity errors whose `ApplicationError.type` is one of these codes end in an
-# escalation with that code as the reason, instead of failing the ticket (FR-005, FR-008). S-07 adds more.
+# A `decide` error whose `ApplicationError.type` is one of these codes ends in an escalation with that
+# code as the reason, instead of failing the ticket (FR-005, FR-008). The workflow only sees the error once
+# the retry policy stops, so retryable codes (unreadable, unavailable) escalate after the last attempt.
 UNKNOWN_CUSTOMER = "unknown_customer"
-ESCALATE_ON_ERROR = frozenset({UNKNOWN_CUSTOMER}) | rules.ALLOWED_VALUE_CODES
+UNREADABLE_MODEL_ANSWER = "unreadable_model_answer"
+LLM_UNAVAILABLE = "llm_unavailable"
+ESCALATE_ON_ERROR = frozenset({UNKNOWN_CUSTOMER, UNREADABLE_MODEL_ANSWER, LLM_UNAVAILABLE}) | rules.ALLOWED_VALUE_CODES
+
+# The failure reason (and workflow `ApplicationError.type`) of an action the helpdesk never confirmed,
+# whatever the last attempt's error was (FR-007). The ticket fails; it is not escalated.
+HELPDESK_UNAVAILABLE = "helpdesk_unavailable"
 
 # The `ApplicationError.type` an approval is refused with when the ticket isn't waiting for one (API: 409).
 NOT_AWAITING_APPROVAL = "not_awaiting_approval"
@@ -65,6 +73,17 @@ def ticket_id_from(workflow_id: str) -> str | None:
     if not workflow_id.startswith(WORKFLOW_ID_PREFIX):
         return None
     return workflow_id.removeprefix(WORKFLOW_ID_PREFIX) or None
+
+
+def decide_error_code(err: ActivityError) -> str | None:
+    """The escalation reason for a `decide` failure, or `None` if the ticket should fail instead.
+
+    The cause is the last attempt's failure: a timeout there means the model never answered in time."""
+    if isinstance(err.cause, ActivityTimeoutError):
+        return LLM_UNAVAILABLE
+    if isinstance(err.cause, ApplicationError) and err.cause.type in ESCALATE_ON_ERROR:
+        return err.cause.type
+    return None
 
 
 # Our own logger (so LOG_LEVEL reaches it) wrapped in the SDK adapter: replay-safe, and the
@@ -99,8 +118,8 @@ class TicketWorkflow:
                 retry_policy=DECIDE_RETRY,
             )
         except ActivityError as err:
-            code = err.cause.type if isinstance(err.cause, ApplicationError) else None
-            if code is None or code not in ESCALATE_ON_ERROR:
+            code = decide_error_code(err)
+            if code is None:
                 raise
             # No decision: the decision and tool calls stay empty in the status.
             if code in rules.ALLOWED_VALUE_CODES:
@@ -160,17 +179,26 @@ class TicketWorkflow:
                     action = CloseAction(reason=reason)
 
         self._enter("acting")
-        self._status.result = await workflow.execute_activity(
-            "act",
-            ActRequest(
-                ticket_id=ticket.ticket_id,
-                idempotency_key=f"{self._status.workflow_id}:{action.type}",
-                action=action,
-            ),
-            result_type=ActionResult,
-            start_to_close_timeout=timedelta(seconds=30),
-            retry_policy=ACT_RETRY,
-        )
+        try:
+            self._status.result = await workflow.execute_activity(
+                "act",
+                ActRequest(
+                    ticket_id=ticket.ticket_id,
+                    idempotency_key=f"{self._status.workflow_id}:{action.type}",
+                    action=action,
+                ),
+                result_type=ActionResult,
+                start_to_close_timeout=timedelta(seconds=30),
+                retry_policy=ACT_RETRY,
+            )
+        except ActivityError as err:
+            # Record the reason before failing, so the status query (replayed on the failed run) shows it.
+            self._status.failure_reason = HELPDESK_UNAVAILABLE
+            self._enter("failed")
+            log.warning("ticket failed", extra={"action": action.type, "reason_code": HELPDESK_UNAVAILABLE})
+            # An ApplicationError fails the workflow; any other exception would only fail the workflow task,
+            # which Temporal retries forever. The cause holds only fixed helpdesk messages.
+            raise ApplicationError("helpdesk unavailable", type=HELPDESK_UNAVAILABLE, non_retryable=True) from err
         log.info(
             "action performed",
             extra={"action": self._status.result.action.type, "helpdesk_ref": self._status.result.helpdesk_ref},

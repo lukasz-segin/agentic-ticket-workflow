@@ -8,11 +8,19 @@ from datetime import timedelta
 import pytest
 from temporalio import activity
 from temporalio.client import WorkflowFailureError, WorkflowHandle, WorkflowQueryFailedError, WorkflowUpdateFailedError
-from temporalio.exceptions import ApplicationError
+from temporalio.exceptions import (
+    ActivityError,
+    ApplicationError,
+    CancelledError,
+    RetryState,
+    TimeoutType,
+)
+from temporalio.exceptions import TimeoutError as ActivityTimeoutError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
 from agentic_ticket_workflow.activities import TicketActivities, check
+from agentic_ticket_workflow.agent import ModelUnavailable
 from agentic_ticket_workflow.fake_llm import FakeChatModel
 from agentic_ticket_workflow.helpdesk import FakeHelpdesk
 from agentic_ticket_workflow.models import (
@@ -30,13 +38,16 @@ from agentic_ticket_workflow.models import (
     ToolCall,
 )
 from agentic_ticket_workflow.workflow import (
+    ACT_RETRY,
     APPROVAL_TIMEOUT,
+    DECIDE_RETRY,
     NOT_AWAITING_APPROVAL,
     TicketWorkflow,
+    decide_error_code,
     ticket_id_from,
     workflow_id_for,
 )
-from tests.fakes import ScriptedRandom
+from tests.fakes import CountingHelpdesk, ScriptedRandom
 
 T1_REPLY = ReplyAction(message="Reset your password: ...", article_ids=["KB-1"])
 # A valid refund: C-100's own invoice, for no more than its amount.
@@ -409,6 +420,111 @@ async def test_disallowed_value_from_the_real_decide_activity_is_escalated(env, 
     assert status.result.action == EscalateAction(reason="priority_not_allowed")
 
 
+class NotJsonModel:
+    """Always answers with text that isn't a decision."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, messages, tools):
+        self.calls += 1
+        return {"role": "assistant", "content": "not json", "tool_calls": None}
+
+
+class EndlessToolModel:
+    """Asks for a tool on every turn, so the loop never gets a decision within its step limit."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, messages, tools):
+        self.calls += 1
+        function = {"name": "search_kb", "arguments": json.dumps({"query": "password"})}
+        call = {"id": f"c{self.calls}", "type": "function", "function": function}
+        return {"role": "assistant", "content": None, "tool_calls": [call]}
+
+
+class DownModel:
+    """A provider that can't be reached."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, messages, tools):
+        self.calls += 1
+        raise ModelUnavailable("connection refused")
+
+
+async def run_with_model(env: WorkflowEnvironment, ticket: Ticket, model) -> TicketStatus:
+    """Run the workflow through the real activities with the given model and a helpdesk that never fails."""
+    acts = TicketActivities(model, FakeHelpdesk(0.0))
+    task_queue = str(uuid.uuid4())
+    async with worker(env, task_queue, [acts.decide, check, acts.act]):
+        status = await env.client.execute_workflow(
+            TicketWorkflow.run, ticket, id=workflow_id_for(ticket.ticket_id), task_queue=task_queue
+        )
+    assert len(acts.helpdesk.performed) == 1
+    return status
+
+
+@pytest.mark.parametrize(
+    ("model", "calls_per_attempt", "code"),
+    [
+        (NotJsonModel(), 1, "unreadable_model_answer"),
+        (EndlessToolModel(), 6, "unreadable_model_answer"),  # over the 6-step limit on every attempt
+        (DownModel(), 1, "llm_unavailable"),
+    ],
+    ids=["not-json", "step-limit", "unavailable"],
+)
+async def test_model_failure_escalates_after_the_retry_limit(env, tickets, model, calls_per_attempt, code):
+    status = await run_with_model(env, tickets["T-1"], model)
+
+    assert model.calls == DECIDE_RETRY.maximum_attempts * calls_per_attempt  # retried, then given up
+    assert status.step == "done"
+    assert status.steps == ["received", "deciding", "acting", "done"]
+    assert status.decision is None
+    assert status.violation is None
+    assert status.tool_calls == []
+    assert status.result.action == EscalateAction(reason=code)
+
+
+def _decide_error(cause: BaseException) -> ActivityError:
+    """An `ActivityError` as the workflow sees it once `decide`'s retry policy stopped."""
+    err = ActivityError(
+        "activity failed",
+        scheduled_event_id=1,
+        started_event_id=2,
+        identity="test",
+        activity_type="decide",
+        activity_id="1",
+        retry_state=RetryState.MAXIMUM_ATTEMPTS_REACHED,
+    )
+    err.__cause__ = cause
+    return err
+
+
+# A decide timeout is tested at the mapping, not through a workflow run: the time-skipping test server
+# doesn't skip time while an activity is in flight, so three 60 s attempts took over 2 minutes of real time.
+@pytest.mark.parametrize(
+    ("cause", "code"),
+    [
+        (
+            ActivityTimeoutError("timed out", type=TimeoutType.START_TO_CLOSE, last_heartbeat_details=[]),
+            "llm_unavailable",
+        ),
+        (ApplicationError("x", type="llm_unavailable"), "llm_unavailable"),
+        (ApplicationError("x", type="unreadable_model_answer"), "unreadable_model_answer"),
+        (ApplicationError("x", type="unknown_customer", non_retryable=True), "unknown_customer"),
+        (ApplicationError("x", type="priority_not_allowed", non_retryable=True), "priority_not_allowed"),
+        (ApplicationError("x", type="KeyError"), None),  # a code bug still fails the ticket
+        (CancelledError("cancelled"), None),
+    ],
+    ids=["timeout", "unavailable", "unreadable", "unknown-customer", "disallowed-value", "bug", "cancelled"],
+)
+def test_decide_error_code(cause, code):
+    assert decide_error_code(_decide_error(cause)) == code
+
+
 async def test_unknown_customer_escalates_without_a_decision_or_retry(env, tickets):
     decide_calls: list[Ticket] = []
     error = ApplicationError("customer not found", type="unknown_customer", non_retryable=True)
@@ -429,6 +545,83 @@ async def test_unlisted_activity_error_still_fails_the_workflow(env, tickets):
     error = ApplicationError("boom", type="something_else", non_retryable=True)
     with pytest.raises(WorkflowFailureError):
         await run_ticket(env, tickets["T-1"], error)
+
+
+T1_DECISION = Decision(category="account", priority="normal", action=T1_REPLY)
+
+
+async def test_helpdesk_still_failing_after_the_last_retry_fails_the_ticket(env, tickets):
+    helpdesk = CountingHelpdesk(1.0)
+    acts = TicketActivities(FakeChatModel(), helpdesk)
+    async with started(env, tickets["T-1"], [acts.decide, check, acts.act]) as handle:
+        with pytest.raises(WorkflowFailureError) as failed:
+            await handle.result()
+        status = await handle.query(TicketWorkflow.status)  # replays the failed run
+
+    assert isinstance(failed.value.cause, ApplicationError)
+    assert failed.value.cause.type == "helpdesk_unavailable"
+    assert helpdesk.calls == ACT_RETRY.maximum_attempts  # bounded, then given up
+    # A failure after recording counts as carried out; retries reuse the key, so never more than once.
+    assert helpdesk.executions <= 1
+    assert status.step == "failed"
+    assert status.steps == ["received", "deciding", "checking", "acting", "failed"]
+    assert status.failure_reason == "helpdesk_unavailable"
+    assert status.result is None
+    assert status.decision.action.type == "reply"  # the decision stays visible
+
+
+async def test_any_act_error_fails_the_ticket_with_helpdesk_unavailable(env, tickets):
+    attempts: list[int] = []
+
+    @activity.defn(name="act")
+    async def rejecting_act(req: ActRequest) -> ActionResult:
+        attempts.append(activity.info().attempt)
+        raise ApplicationError("request rejected", type="HelpdeskRejected", non_retryable=True)
+
+    activities = [*fake_activities(T1_DECISION, [])[:2], rejecting_act]
+    async with started(env, tickets["T-1"], activities) as handle:
+        with pytest.raises(WorkflowFailureError) as failed:
+            await handle.result()
+        status = await handle.query(TicketWorkflow.status)
+
+    assert attempts == [1]
+    assert failed.value.cause.type == "helpdesk_unavailable"
+    assert (status.step, status.failure_reason) == ("failed", "helpdesk_unavailable")
+
+
+async def test_worker_restart_mid_action_performs_it_exactly_once(env, tickets):
+    """The helpdesk records the action, then worker 1 goes down before the result is reported. Worker 2
+    retries the activity with the same idempotency key and gets the recorded result: one execution."""
+    helpdesk = CountingHelpdesk(0.0)
+    attempts: list[tuple[int, str]] = []
+    recorded = asyncio.Event()
+
+    @activity.defn(name="act")
+    async def crashing_act(req: ActRequest) -> ActionResult:
+        attempt = activity.info().attempt
+        attempts.append((attempt, req.idempotency_key))
+        result = helpdesk.perform(req)
+        if attempt == 1:
+            recorded.set()
+            # Wait with `await`: blocking here would stall the worker's event loop, and it could never stop.
+            await asyncio.Event().wait()
+        return result
+
+    activities = [*fake_activities(T1_DECISION, [])[:2], crashing_act]
+    task_queue = str(uuid.uuid4())
+    # No workflow cache, so the server stops routing the workflow's tasks to worker 1's sticky queue.
+    async with started(env, tickets["T-1"], activities, task_queue=task_queue, max_cached_workflows=0) as handle:
+        await asyncio.wait_for(recorded.wait(), timeout=10)
+    # Worker 1 is down; its in-flight attempt was cancelled at shutdown.
+
+    async with worker(env, task_queue, activities):
+        status = await handle.result()
+
+    assert [attempt for attempt, _ in attempts] == [1, 2]  # worker 2 really retried
+    assert {key for _, key in attempts} == {"ticket-T-1:reply"}
+    assert helpdesk.executions == 1
+    assert status.step == "done"
+    assert status.result.helpdesk_ref == "HD-1"
 
 
 @pytest.mark.parametrize(

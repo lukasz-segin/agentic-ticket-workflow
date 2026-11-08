@@ -11,7 +11,7 @@ from agentic_ticket_workflow.agent import ChatModel
 from agentic_ticket_workflow.helpdesk import FakeHelpdesk
 from agentic_ticket_workflow.models import ActionResult, ActRequest, CheckRequest, DecideResult, Ticket
 from agentic_ticket_workflow.tools import load_data
-from agentic_ticket_workflow.workflow import UNKNOWN_CUSTOMER
+from agentic_ticket_workflow.workflow import LLM_UNAVAILABLE, UNKNOWN_CUSTOMER, UNREADABLE_MODEL_ANSWER
 
 # The SDK adapter adds a `temporal_activity` extra (IDs, attempt); the formatter reads it.
 log = activity.LoggerAdapter(logging.getLogger("agentic_ticket_workflow.activities"), None)
@@ -36,6 +36,15 @@ class TicketActivities:
             log.info("decision value not allowed", extra={"reason_code": exc.code})
             # Non-retryable: asking again doesn't make the answer allowed. The workflow escalates with the code.
             raise ApplicationError("decision value not allowed", type=exc.code, non_retryable=True) from None
+        except agent.UnreadableModelAnswer:
+            log.info("model answer unreadable", extra={"reason_code": UNREADABLE_MODEL_ANSWER})
+            # Retryable: a model may answer properly next time. The workflow escalates once retries run out.
+            # Fixed message, `from None`: the cause would carry model text into Temporal history.
+            raise ApplicationError("model answer unreadable", type=UNREADABLE_MODEL_ANSWER) from None
+        except agent.ModelUnavailable as exc:
+            log.info("model unavailable", extra={"reason_code": LLM_UNAVAILABLE, "error_type": type(exc).__name__})
+            # Retryable: the provider may recover. A provider message may quote the request, so drop it.
+            raise ApplicationError("model unavailable", type=LLM_UNAVAILABLE) from None
         log.info("model decided", extra={"tools": [call.name for call in result.tool_calls]})
         return result
 
