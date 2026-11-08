@@ -1,6 +1,7 @@
 """Domain types shared by the agent loop, the workflow and the API. Pydantic only."""
 
 import math
+from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, PlainSerializer
@@ -111,5 +112,8 @@ class TicketStatus(BaseModel):
     decision: Decision | None = None
     # The code of the decision rule the model broke (FR-005); the ticket is then escalated with it.
     violation: str | None = None
+    # Set when a valid refund starts waiting: an answer must reach the workflow before this time,
+    # otherwise the ticket is escalated with `approval_timeout` (FR-006, US-04).
+    approval_deadline: datetime | None = None
     approval: Approval | None = None
     result: ActionResult | None = None

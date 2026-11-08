@@ -30,7 +30,7 @@ Submitting the same `ticket_id` again returns `200` with `"created": false`, whe
 
 ### Approve a refund
 
-A refund is never issued without a person. Submit T-2 (a double charge), and it stops at `awaiting_approval` with the proposed refund in `decision`:
+A refund is never issued without a person. Submit T-2 (a double charge), and it stops at `awaiting_approval` with the proposed refund in `decision` and the end of the wait in `approval_deadline` (24 h after it started waiting):
 
 ```sh
 curl -X POST localhost:8000/tickets -H 'content-type: application/json' --data-binary @- <<'EOF'
@@ -39,7 +39,8 @@ curl -X POST localhost:8000/tickets -H 'content-type: application/json' --data-b
 EOF
 curl localhost:8000/tickets/T-2
 # {"status":"running","step":"awaiting_approval","decision":{...,"action":{"type":"refund",
-#  "invoice_id":"INV-1002","amount_eur":49.0}},"result":null,...}
+#  "invoice_id":"INV-1002","amount_eur":49.0}},"approval_deadline":"2026-11-08T22:41:27.727674Z",
+#  "result":null,...}
 ```
 
 Approve it (`approver` and `comment` are optional). The API answers `200` as soon as the answer is recorded, and the workflow then issues the refund:
@@ -50,7 +51,7 @@ curl -X POST localhost:8000/tickets/T-2/approval -H 'content-type: application/j
 # {"ticket_id":"T-2","workflow_id":"ticket-T-2","approved":true}
 ```
 
-`{"approved": false, ...}` rejects it instead: the ticket is closed with reason `refund_rejected: <comment>` (or `refund_rejected` with no comment) and nothing is refunded. An unknown ticket returns `404`. A ticket that isn't waiting for an approval returns `409`: it was already approved or rejected, it is not a refund, its refund broke a rule, it is still being decided, or it has finished.
+`{"approved": false, ...}` rejects it instead: the ticket is closed with reason `refund_rejected: <comment>` (or `refund_rejected` with no comment) and nothing is refunded. With no answer by `approval_deadline`, the ticket is escalated with reason `approval_timeout` and nothing is refunded. An unknown ticket returns `404`. A ticket that isn't waiting for an approval returns `409`: it was already approved or rejected, its 24 h approval wait ran out, it is not a refund, its refund broke a rule, it is still being decided, or it has finished.
 
 ### Fake model
 
@@ -82,7 +83,8 @@ Every decision is checked in plain Python (`src/agentic_ticket_workflow/rules.py
 
 - **Allowed values** are named from the typed decision's parse errors, so the `Decision` schema stays the only list of them. `decide` is not retried for them, because asking again doesn't make an answer allowed. Other unreadable answers are not named this way.
 - **Refund rules** run after the model, in their own `check` step (an activity, so the workflow stays deterministic). They read the invoices from the data files, never from the model's tool results. A proposed amount of NaN or infinity is kept and stopped like any other; JSON shows it as the string `"nan"` or `"inf"`.
-- A refund that passes every rule waits at `awaiting_approval` for `POST /tickets/{id}/approval` (see [Approve a refund](#approve-a-refund)). Approve issues exactly that refund, once, even when the helpdesk fails and `act` is retried (the retry reuses the idempotency key `ticket-<id>:refund`). Reject closes the ticket with `refund_rejected[: comment]`. The approval is a Temporal Update whose validator refuses any answer the ticket isn't waiting for, so a second or late answer never reaches the workflow. For now the wait has no time limit; the 24 h timeout comes with S-06.
+- A refund that passes every rule waits at `awaiting_approval` for `POST /tickets/{id}/approval` (see [Approve a refund](#approve-a-refund)). Approve issues exactly that refund, once, even when the helpdesk fails and `act` is retried (the retry reuses the idempotency key `ticket-<id>:refund`). Reject closes the ticket with `refund_rejected[: comment]`. The approval is a Temporal Update whose validator refuses any answer the ticket isn't waiting for, so a second or late answer never reaches the workflow.
+- The wait lasts at most 24 h from entering `awaiting_approval`. It is a durable Temporal timer, so the deadline survives worker restarts. With no answer by then, the ticket is escalated with `approval_timeout`. An answer counts only if the workflow processes it before the deadline. The validator also checks the deadline itself, so an approval queued while the worker was down and delivered after the deadline gets `409`, even though Temporal runs it before the overdue timer. An approval accepted before the deadline is always honoured.
 - Limits: a refund of an unpaid invoice passes the rules, and so does a refund of the same invoice in full from two tickets. The person who decides on the refund is the only guard there.
 
 ## Tests
@@ -106,6 +108,8 @@ uv run ruff format --check # formatting (drop --check to reformat)
 - **The fake helpdesk keeps its idempotency keys in memory, per worker process.** They are lost when the worker restarts. They are also not shared between workers, so run exactly one worker. A second worker on the same task queue (e.g. one started with `uv run` beside compose) could perform a retried action again.
 - The API has no auth. Anyone who can reach it can approve a refund, and the `approver` name is whatever the caller sends. It is logged unverified, as an audit trail.
 - The approval comment is free text, so it is kept only in the ticket status (`approval` in `GET /tickets/{id}`, stored in Temporal history), never in the logs.
+- The approval deadline is fixed at 24 h; it is not configurable.
+- **Workflow code changes are not versioned.** Adding the approval timer changed the workflow in a way Temporal can't replay for workflows started under older code. A refund already waiting in a local dev server from before the change may fail replay after an upgrade. Reset with `docker compose down -v`, then `docker compose up --build`. This **deletes all local ticket histories** (the `temporal-data` volume); a plain `docker compose down` keeps them.
 
 ## Azure deployment
 

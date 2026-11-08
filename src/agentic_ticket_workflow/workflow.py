@@ -1,10 +1,12 @@
 """The durable per-ticket process (FR-001…FR-006): decide → check → approval wait (refunds only) → act.
 
 The status is queryable. A valid refund waits at `awaiting_approval` until the `approve` Update records a
-person's answer; its validator refuses any approval the ticket is not waiting for.
+person's answer, for at most 24 h; then it is escalated with `approval_timeout`. The Update's validator
+refuses any approval the ticket is not waiting for, including one that arrives at or after the deadline.
 """
 
 import logging
+from contextlib import suppress
 from datetime import timedelta
 
 from temporalio import workflow
@@ -46,6 +48,10 @@ ESCALATE_ON_ERROR = frozenset({UNKNOWN_CUSTOMER}) | rules.ALLOWED_VALUE_CODES
 NOT_AWAITING_APPROVAL = "not_awaiting_approval"
 # The close reason of a rejected refund; the approver's comment, if any, follows after ": ".
 REFUND_REJECTED = "refund_rejected"
+# How long a valid refund waits for a person's answer, from entering `awaiting_approval` (FR-006).
+APPROVAL_TIMEOUT = timedelta(hours=24)
+# The escalation reason (and timer name) of a refund nobody answered in time (US-04).
+APPROVAL_TIMEOUT_CODE = "approval_timeout"
 
 WORKFLOW_ID_PREFIX = "ticket-"
 
@@ -131,13 +137,25 @@ class TicketWorkflow:
                 action = EscalateAction(reason=violation)
                 log.info("rule broken", extra={"action": action.type, "reason_code": violation})
             elif action.type == "refund":
-                # A refund is never issued without a human. Enter the step first, so the validator sees
-                # the ticket as waiting as soon as the wait starts. (S-06 adds the 24 h timeout here.)
+                # A refund is never issued without a human. Set the deadline, then enter the step (no
+                # yield in between), so any query or validator that sees the wait also sees its deadline.
+                self._status.approval_deadline = workflow.now() + APPROVAL_TIMEOUT
                 self._enter("awaiting_approval")
                 log.info("refund awaiting approval", extra={"action": action.type})
-                await workflow.wait_condition(lambda: self._status.approval is not None)
+                # On timeout, decide below from the recorded approval, not from whether the timer fired.
+                with suppress(TimeoutError):
+                    await workflow.wait_condition(
+                        lambda: self._status.approval is not None,
+                        timeout=APPROVAL_TIMEOUT,
+                        timeout_summary=APPROVAL_TIMEOUT_CODE,
+                    )
                 approval = self._status.approval
-                if not approval.approved:
+                if approval is None:
+                    action = EscalateAction(reason=APPROVAL_TIMEOUT_CODE)
+                    log.info(
+                        "refund approval timed out", extra={"action": action.type, "reason_code": APPROVAL_TIMEOUT_CODE}
+                    )
+                elif not approval.approved:
                     reason = f"{REFUND_REJECTED}: {approval.comment}" if approval.comment else REFUND_REJECTED
                     action = CloseAction(reason=reason)
 
@@ -177,7 +195,16 @@ class TicketWorkflow:
         self._refuse_unless_awaiting_approval()
 
     def _refuse_unless_awaiting_approval(self) -> None:
-        if self._status is None or self._status.step != "awaiting_approval" or self._status.approval is not None:
+        # The deadline check matters when the worker was down past the deadline: the overdue timer and a
+        # queued approval then arrive in one activation, and the SDK runs the Update before the timer, so
+        # the step alone would still say "waiting". `workflow.now()` is that activation's time.
+        status = self._status
+        if (
+            status is None
+            or status.step != "awaiting_approval"
+            or status.approval is not None
+            or (status.approval_deadline is not None and workflow.now() >= status.approval_deadline)
+        ):
             raise ApplicationError("ticket is not awaiting approval", type=NOT_AWAITING_APPROVAL, non_retryable=True)
 
     @workflow.query
