@@ -15,3 +15,6 @@ docs/
 .gemini/
 skills-lock.json
 .10x-cli.json
+
+# Editor
+.vscode/
