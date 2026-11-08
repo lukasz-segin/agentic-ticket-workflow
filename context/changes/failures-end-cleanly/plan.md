@@ -264,15 +264,15 @@ Record `helpdesk_unavailable` in the status and logs, fail the workflow with tha
 
 #### Automated
 
-- [x] 2.1 New helpdesk-failure, restart, API and log tests pass
-- [x] 2.2 Full suite passes
-- [x] 2.3 Lint passes
-- [x] 2.4 Format passes
+- [x] 2.1 New helpdesk-failure, restart, API and log tests pass — 7d37d7f
+- [x] 2.2 Full suite passes — 7d37d7f
+- [x] 2.3 Lint passes — 7d37d7f
+- [x] 2.4 Format passes — 7d37d7f
 
 #### Manual
 
-- [x] 2.5 Compose with failure rate 1.0 shows the fresh ticket S07-FAIL-1 failed with helpdesk_unavailable
-- [x] 2.6 Worker log line with reason_code helpdesk_unavailable carries the IDs and no ticket text
-- [x] 2.7 Default rate: every example ticket ends in a final state with a reason
+- [x] 2.5 Compose with failure rate 1.0 shows the fresh ticket S07-FAIL-1 failed with helpdesk_unavailable — 7d37d7f
+- [x] 2.6 Worker log line with reason_code helpdesk_unavailable carries the IDs and no ticket text — 7d37d7f
+- [x] 2.7 Default rate: every example ticket ends in a final state with a reason — 7d37d7f
 
 Manual verification completed on 2026-11-08; see [phase-2-manual-verification.md](phase-2-manual-verification.md) for API, log and Temporal UI evidence.
