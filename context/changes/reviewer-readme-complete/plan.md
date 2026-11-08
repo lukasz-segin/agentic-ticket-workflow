@@ -244,28 +244,28 @@ Fill the placeholders and prove the example outcomes on a live compose run.
 
 #### Automated
 
-- [x] 1.1 Every internal anchor resolves
-- [x] 1.2 Markdown-only diff
-- [x] 1.3 Ruff check and format still pass
+- [x] 1.1 Every internal anchor resolves — 3f538e6
+- [x] 1.2 Markdown-only diff — 3f538e6
+- [x] 1.3 Ruff check and format still pass — 3f538e6
 
 #### Manual
 
-- [x] 1.4 No fact from the old README lost
-- [x] 1.5 Reliability table matches workflow.py
+- [x] 1.4 No fact from the old README lost — 3f538e6
+- [x] 1.5 Reliability table matches workflow.py — 3f538e6
 
 ### Phase 2: New content and live verification
 
 #### Automated
 
-- [ ] 2.1 No placeholders left
-- [ ] 2.2 Every internal anchor resolves
-- [ ] 2.3 Only docs changed
-- [ ] 2.4 uv run pytest passes
+- [x] 2.1 No placeholders left
+- [x] 2.2 Every internal anchor resolves
+- [x] 2.3 Only docs changed
+- [x] 2.4 uv run pytest passes
 
 #### Manual
 
-- [ ] 2.5 Live submit-and-poll at failure rate 0 matches the T-1…T-7 table
-- [ ] 2.6 T-6 excerpt matches the live response
-- [ ] 2.7 Mermaid diagram renders
-- [ ] 2.8 Every FR-012 checklist bullet maps to a heading
-- [ ] 2.9 AI section facts match archived reviews and named tests
+- [x] 2.5 Live submit-and-poll at failure rate 0 matches the T-1…T-7 table
+- [x] 2.6 T-6 excerpt matches the live response
+- [x] 2.7 Mermaid diagram renders
+- [x] 2.8 Every FR-012 checklist bullet maps to a heading
+- [x] 2.9 AI section facts match archived reviews and named tests
