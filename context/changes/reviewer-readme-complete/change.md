@@ -1,7 +1,7 @@
 ---
 change_id: reviewer-readme-complete
 title: Reviewer readme complete
-status: implementing
+status: implemented
 created: 2026-11-08
 updated: 2026-11-08
 archived_at: null

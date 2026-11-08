@@ -257,15 +257,15 @@ Fill the placeholders and prove the example outcomes on a live compose run.
 
 #### Automated
 
-- [x] 2.1 No placeholders left
-- [x] 2.2 Every internal anchor resolves
-- [x] 2.3 Only docs changed
-- [x] 2.4 uv run pytest passes
+- [x] 2.1 No placeholders left — dbfa11a
+- [x] 2.2 Every internal anchor resolves — dbfa11a
+- [x] 2.3 Only docs changed — dbfa11a
+- [x] 2.4 uv run pytest passes — dbfa11a
 
 #### Manual
 
-- [x] 2.5 Live submit-and-poll at failure rate 0 matches the T-1…T-7 table
-- [x] 2.6 T-6 excerpt matches the live response
-- [x] 2.7 Mermaid diagram renders
-- [x] 2.8 Every FR-012 checklist bullet maps to a heading
-- [x] 2.9 AI section facts match archived reviews and named tests
+- [x] 2.5 Live submit-and-poll at failure rate 0 matches the T-1…T-7 table — dbfa11a
+- [x] 2.6 T-6 excerpt matches the live response — dbfa11a
+- [x] 2.7 Mermaid diagram renders — dbfa11a
+- [x] 2.8 Every FR-012 checklist bullet maps to a heading — dbfa11a
+- [x] 2.9 AI section facts match archived reviews and named tests — dbfa11a
