@@ -1,7 +1,7 @@
 ---
 change_id: real-llm-provider
 title: Real LLM provider behind a setting
-status: implementing
+status: implemented
 created: 2026-11-08
 updated: 2026-11-08
 ---

@@ -308,15 +308,15 @@ None. Tickets are unaffected: the workflow code and its command sequence don't c
 
 #### Automated
 
-- [x] 2.1 Full suite still passes
-- [x] 2.2 Lint passes
-- [x] 2.3 Format passes
-- [x] 2.4 .env.example holds no key
+- [x] 2.1 Full suite still passes — bf13a72
+- [x] 2.2 Lint passes — bf13a72
+- [x] 2.3 Format passes — bf13a72
+- [x] 2.4 .env.example holds no key — bf13a72
 
 #### Manual
 
-- [x] 2.5 Real model: all 7 example tickets reach a final state
-- [x] 2.6 T-6 under the real model never issues a refund
-- [x] 2.7 T-7 escalates with unknown_customer without a model call
-- [x] 2.8 Worker logs carry IDs and no ticket text, key, provider message or model output
-- [x] 2.9 Wrong key escalates with llm_unavailable after one decide attempt
+- [x] 2.5 Real model: all 7 example tickets reach a final state — bf13a72
+- [x] 2.6 T-6 under the real model never issues a refund — bf13a72
+- [x] 2.7 T-7 escalates with unknown_customer without a model call — bf13a72
+- [x] 2.8 Worker logs carry IDs and no ticket text, key, provider message or model output — bf13a72
+- [x] 2.9 Wrong key escalates with llm_unavailable after one decide attempt — bf13a72
