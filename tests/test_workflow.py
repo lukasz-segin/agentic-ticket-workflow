@@ -38,6 +38,7 @@ from agentic_ticket_workflow.models import (
     ToolCall,
 )
 from agentic_ticket_workflow.workflow import (
+    ACT_RETRY,
     APPROVAL_TIMEOUT,
     DECIDE_RETRY,
     NOT_AWAITING_APPROVAL,
@@ -46,7 +47,7 @@ from agentic_ticket_workflow.workflow import (
     ticket_id_from,
     workflow_id_for,
 )
-from tests.fakes import ScriptedRandom
+from tests.fakes import CountingHelpdesk, ScriptedRandom
 
 T1_REPLY = ReplyAction(message="Reset your password: ...", article_ids=["KB-1"])
 # A valid refund: C-100's own invoice, for no more than its amount.
@@ -544,6 +545,83 @@ async def test_unlisted_activity_error_still_fails_the_workflow(env, tickets):
     error = ApplicationError("boom", type="something_else", non_retryable=True)
     with pytest.raises(WorkflowFailureError):
         await run_ticket(env, tickets["T-1"], error)
+
+
+T1_DECISION = Decision(category="account", priority="normal", action=T1_REPLY)
+
+
+async def test_helpdesk_still_failing_after_the_last_retry_fails_the_ticket(env, tickets):
+    helpdesk = CountingHelpdesk(1.0)
+    acts = TicketActivities(FakeChatModel(), helpdesk)
+    async with started(env, tickets["T-1"], [acts.decide, check, acts.act]) as handle:
+        with pytest.raises(WorkflowFailureError) as failed:
+            await handle.result()
+        status = await handle.query(TicketWorkflow.status)  # replays the failed run
+
+    assert isinstance(failed.value.cause, ApplicationError)
+    assert failed.value.cause.type == "helpdesk_unavailable"
+    assert helpdesk.calls == ACT_RETRY.maximum_attempts  # bounded, then given up
+    # A failure after recording counts as carried out; retries reuse the key, so never more than once.
+    assert helpdesk.executions <= 1
+    assert status.step == "failed"
+    assert status.steps == ["received", "deciding", "checking", "acting", "failed"]
+    assert status.failure_reason == "helpdesk_unavailable"
+    assert status.result is None
+    assert status.decision.action.type == "reply"  # the decision stays visible
+
+
+async def test_any_act_error_fails_the_ticket_with_helpdesk_unavailable(env, tickets):
+    attempts: list[int] = []
+
+    @activity.defn(name="act")
+    async def rejecting_act(req: ActRequest) -> ActionResult:
+        attempts.append(activity.info().attempt)
+        raise ApplicationError("request rejected", type="HelpdeskRejected", non_retryable=True)
+
+    activities = [*fake_activities(T1_DECISION, [])[:2], rejecting_act]
+    async with started(env, tickets["T-1"], activities) as handle:
+        with pytest.raises(WorkflowFailureError) as failed:
+            await handle.result()
+        status = await handle.query(TicketWorkflow.status)
+
+    assert attempts == [1]
+    assert failed.value.cause.type == "helpdesk_unavailable"
+    assert (status.step, status.failure_reason) == ("failed", "helpdesk_unavailable")
+
+
+async def test_worker_restart_mid_action_performs_it_exactly_once(env, tickets):
+    """The helpdesk records the action, then worker 1 goes down before the result is reported. Worker 2
+    retries the activity with the same idempotency key and gets the recorded result: one execution."""
+    helpdesk = CountingHelpdesk(0.0)
+    attempts: list[tuple[int, str]] = []
+    recorded = asyncio.Event()
+
+    @activity.defn(name="act")
+    async def crashing_act(req: ActRequest) -> ActionResult:
+        attempt = activity.info().attempt
+        attempts.append((attempt, req.idempotency_key))
+        result = helpdesk.perform(req)
+        if attempt == 1:
+            recorded.set()
+            # Wait with `await`: blocking here would stall the worker's event loop, and it could never stop.
+            await asyncio.Event().wait()
+        return result
+
+    activities = [*fake_activities(T1_DECISION, [])[:2], crashing_act]
+    task_queue = str(uuid.uuid4())
+    # No workflow cache, so the server stops routing the workflow's tasks to worker 1's sticky queue.
+    async with started(env, tickets["T-1"], activities, task_queue=task_queue, max_cached_workflows=0) as handle:
+        await asyncio.wait_for(recorded.wait(), timeout=10)
+    # Worker 1 is down; its in-flight attempt was cancelled at shutdown.
+
+    async with worker(env, task_queue, activities):
+        status = await handle.result()
+
+    assert [attempt for attempt, _ in attempts] == [1, 2]  # worker 2 really retried
+    assert {key for _, key in attempts} == {"ticket-T-1:reply"}
+    assert helpdesk.executions == 1
+    assert status.step == "done"
+    assert status.result.helpdesk_ref == "HD-1"
 
 
 @pytest.mark.parametrize(

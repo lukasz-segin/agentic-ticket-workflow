@@ -5,6 +5,7 @@ import uuid
 
 import httpx
 import pytest
+from temporalio.client import WorkflowFailureError
 from temporalio.worker import Worker
 
 from agentic_ticket_workflow.activities import TicketActivities, check
@@ -198,4 +199,30 @@ async def test_t1_is_traceable_end_to_end_without_ticket_text(env, tickets, monk
     for line in raw:
         for secret in secrets:
             # Lines are JSON: match the text as json.dumps would write it, too.
+            assert secret not in line and json.dumps(secret)[1:-1] not in line, line
+
+
+async def test_failed_ticket_logs_its_reason_with_the_ids_and_no_ticket_text(env, tickets):
+    """The line the README's failed-ticket alert matches on: one WARNING with `helpdesk_unavailable`."""
+    buffer = io.StringIO()
+    configure_logging("INFO", stream=buffer)
+    task_queue = str(uuid.uuid4())
+    acts = TicketActivities(FakeChatModel(), FakeHelpdesk(1.0))
+    t1 = tickets["T-1"]
+
+    async with Worker(
+        env.client, task_queue=task_queue, workflows=[TicketWorkflow], activities=[acts.decide, check, acts.act]
+    ):
+        handle = await env.client.start_workflow(TicketWorkflow.run, t1, id="ticket-T-1", task_queue=task_queue)
+        with pytest.raises(WorkflowFailureError):
+            await handle.result()
+
+    raw = buffer.getvalue().splitlines()
+    failed = [line for line in map(json.loads, raw) if line.get("reason_code") == "helpdesk_unavailable"]
+    assert len(failed) == 1
+    assert failed[0]["level"] == "WARNING"
+    assert (failed[0]["ticket_id"], failed[0]["workflow_id"]) == ("T-1", "ticket-T-1")
+    assert (failed[0]["message"], failed[0]["action"]) == ("ticket failed", "reply")
+    for line in raw:
+        for secret in (t1.body, t1.subject):
             assert secret not in line and json.dumps(secret)[1:-1] not in line, line

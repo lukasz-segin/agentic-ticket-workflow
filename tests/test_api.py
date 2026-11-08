@@ -8,6 +8,7 @@ import httpx
 import pytest
 from temporalio.client import (
     WorkflowExecutionStatus,
+    WorkflowFailureError,
     WorkflowUpdateFailedError,
     WorkflowUpdateRPCTimeoutOrCancelledError,
 )
@@ -74,12 +75,13 @@ async def test_submit_and_read_t1_through_the_real_activities(env, tickets, monk
 
 
 @asynccontextmanager
-async def api_and_worker(env, monkeypatch):
-    """The API wired to the test server, and a worker with the real activities and a helpdesk that never fails."""
+async def api_and_worker(env, monkeypatch, helpdesk_failure_rate: float = 0.0):
+    """The API wired to the test server, and a worker with the real activities and a fake helpdesk
+    (by default one that never fails)."""
     task_queue = str(uuid.uuid4())
     monkeypatch.setattr(app.state, "temporal_client", env.client, raising=False)
     monkeypatch.setattr(app.state, "task_queue", task_queue, raising=False)
-    acts = TicketActivities(FakeChatModel(), FakeHelpdesk(0.0))
+    acts = TicketActivities(FakeChatModel(), FakeHelpdesk(helpdesk_failure_rate))
     async with (
         httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
         Worker(
@@ -87,6 +89,19 @@ async def api_and_worker(env, monkeypatch):
         ),
     ):
         yield http, acts
+
+
+async def test_failed_ticket_shows_its_reason_through_the_api(env, tickets, monkeypatch):
+    async with api_and_worker(env, monkeypatch, helpdesk_failure_rate=1.0) as (http, _):
+        assert (await http.post("/tickets", json=tickets["T-1"].model_dump())).status_code == 202
+        with pytest.raises(WorkflowFailureError):
+            await env.client.get_workflow_handle("ticket-T-1").result()
+        view = await http.get("/tickets/T-1")
+
+    assert view.status_code == 200
+    body = view.json()
+    assert (body["status"], body["step"], body["failure_reason"]) == ("failed", "failed", "helpdesk_unavailable")
+    assert body["result"] is None
 
 
 async def wait_for_step(http: httpx.AsyncClient, ticket_id: str, step: str) -> dict:

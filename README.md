@@ -99,6 +99,28 @@ Some tickets can't be decided at all. Those tickets are escalated with a reason 
 
 `decide` is retried up to 3 times in all, with backoff (1 s, then 2 s), because a model may answer properly, or a provider may recover, on the next try. The limit is fixed in code (`DECIDE_RETRY` in `workflow.py`). Any other `decide` error, such as a bug in the code, still fails the ticket. The fake model never fails, so these two escalations are shown by the tests (`tests/test_workflow.py`), not in the compose demo.
 
+### Failed tickets
+
+The helpdesk action (`act`) is retried up to 5 times in all, with backoff (1 s, 2 s, 4 s, 8 s; capped at 10 s, `ACT_RETRY` in `workflow.py`). Every retry reuses the idempotency key `ticket-<id>:<action>`, so a retry never repeats an action. If the action still hasn't gone through after the last attempt, or fails in any other way, the ticket **fails** with reason `helpdesk_unavailable`. It is not escalated, because the escalation itself would need the same helpdesk (FR-007). The workflow fails with error type `helpdesk_unavailable` in the Temporal UI, and the worker logs one `WARNING` line `"ticket failed"` with `"reason_code": "helpdesk_unavailable"`. `GET /tickets/{id}` shows:
+
+```json
+{"status": "failed", "step": "failed", "failure_reason": "helpdesk_unavailable", "result": null, ...}
+```
+
+The decision stays visible. `helpdesk_unavailable` means the helpdesk never *confirmed* the action. A call can fail after the helpdesk has already carried the action out, so the action may have happened, but never twice. Reading a failed ticket needs a running worker, as reading a running one does.
+
+To see it, make every helpdesk call fail and submit a ticket under a new ID. A reused ID returns the earlier execution.
+
+```sh
+HELPDESK_FAILURE_RATE=1.0 docker compose up --build
+curl -X POST localhost:8000/tickets -H 'content-type: application/json' \
+  -d '{"ticket_id": "FAIL-1", "customer_id": "C-200", "subject": "Forgot password", "body": "I cannot log in."}'
+# about 15 s later:
+curl localhost:8000/tickets/FAIL-1
+```
+
+Ticket state lives in Temporal, so a worker restart in the middle of processing loses no ticket: the new worker picks the workflow up where it was, and retries an interrupted action under the same key (tested in `test_worker_restart_mid_action_performs_it_exactly_once`). That holds only while the fake helpdesk keeps its memory; see [Known limitations](#known-limitations).
+
 ## Tests
 
 ```sh
@@ -117,7 +139,7 @@ uv run ruff format --check # formatting (drop --check to reformat)
 ## Known limitations
 
 - **Duplicate detection lasts only as long as Temporal's retention period.** A resubmitted ticket ID returns the existing processing only while Temporal keeps that workflow. The `default` namespace keeps it for **24 h** after it closes. After that, the same ID starts a new workflow. Then only the fake helpdesk's idempotency keys stop the action from being repeated.
-- **The fake helpdesk keeps its idempotency keys in memory, per worker process.** They are lost when the worker restarts. They are also not shared between workers, so run exactly one worker. A second worker on the same task queue (e.g. one started with `uv run` beside compose) could perform a retried action again.
+- **The fake helpdesk keeps its idempotency keys in memory, per worker process.** They are lost when the worker process restarts, so an action interrupted by that restart (recorded, but its result never reported) is performed again by the retry. A real helpdesk would keep the keys on its side. They are also not shared between workers, so run exactly one worker. A second worker on the same task queue (e.g. one started with `uv run` beside compose) could perform a retried action again.
 - The API has no auth. Anyone who can reach it can approve a refund, and the `approver` name is whatever the caller sends. It is logged unverified, as an audit trail.
 - The approval comment is free text, so it is kept only in the ticket status (`approval` in `GET /tickets/{id}`, stored in Temporal history), never in the logs.
 - The approval deadline is fixed at 24 h; it is not configurable.
