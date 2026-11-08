@@ -49,7 +49,7 @@ Northdesk's support team triages every ticket by hand. That means repetitive wor
 | S-06 | refund-timeout-escalated    | Support agent sees an unanswered refund escalated after 24 h, and a late approval refused                | S-05          | US-04, FR-006, FR-011                                   | done | [#6](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/6) |
 | S-07 | failures-end-cleanly        | Support agent sees every ticket reach a final state under helpdesk/LLM failures, with a clear reason     | S-01          | FR-007, FR-008, FR-011                                  | done | [#7](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/7) |
 | S-08 | real-llm-provider           | Reviewer can switch from the fake model to a real LLM provider with a setting                            | S-04          | FR-004, FR-009                                          | done | [#8](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/8) |
-| S-09 | reviewer-readme-complete    | Reviewer can learn from the README how to run, call, test, understand and deploy the service             | S-02, S-03, S-06, S-07, S-08 | FR-012                                   | in-progress | [#9](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/9) |
+| S-09 | reviewer-readme-complete    | Reviewer can learn from the README how to run, call, test, understand and deploy the service             | S-02, S-03, S-06, S-07, S-08 | FR-012                                   | done | [#9](https://github.com/lukasz-segin/agentic-ticket-workflow/issues/9) |
 
 ## Streams
 
@@ -191,7 +191,7 @@ None. The deploy layer is present, and each missing cross-cutting piece is intro
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** The PRD says to write it as the service is built, so each earlier slice should leave README notes and this slice finishes the checklist. The risk is leaving it to the end and running out of time.
-- **Status:** in-progress
+- **Status:** done
 
 ## Backlog Handoff
 
@@ -243,3 +243,4 @@ None. The deploy layer is present, and each missing cross-cutting piece is intro
 - **S-06: Support agent sees a refund with no approval or rejection within 24 h escalated, with the timeout as the reason and no refund issued. An approval sent after that is refused as a conflict and never issues a refund. The single test command runs a time-skipped workflow test for the 24 h timeout.** — Archived 2026-11-08 → `context/archive/2026-11-07-refund-timeout-escalated/`. Lesson: —.
 - **S-07: Support agent sees every ticket reach a final state when the outside services misbehave. A helpdesk that recovers within its retry limit carries out the action exactly once. A helpdesk still failing after its last retry fails the ticket with `helpdesk_unavailable`. A model that is unreadable, or that overruns the tool-loop step limit, escalates with `unreadable_model_answer`. A model still unavailable after its retry limit escalates with `llm_unavailable`. A restart in the middle of processing loses no ticket and repeats no action. The single test command runs a time-skipped workflow test for an action that fails and then succeeds after a retry.** — Archived 2026-11-08 → `context/archive/2026-11-08-failures-end-cleanly/`. Lesson: —.
 - **S-08: Reviewer can switch from the fake model to a real LLM provider with environment settings only. The real model goes through the same tool loop and the same rule checks as the fake one, and fake mode stays the default with no network.** — Archived 2026-11-08 → `context/archive/2026-11-08-real-llm-provider/`. Lesson: —.
+- **S-09: Reviewer can learn everything on the FR-012 checklist from the README: how to run it with one command and how to run the tests; example requests for the three endpoints using the example tickets; the architecture with one simple diagram; why each part runs as a durable workflow step or as a call to an outside service; how retries, timeouts and duplicate requests are handled; how the rules are protected from ticket text; how AI assistants were used (with at least one wrong output and how it was noticed); and the assumptions, limitations and next steps. The Azure deployment section already exists.** — Archived 2026-11-08 → `context/archive/2026-11-08-reviewer-readme-complete/`. Lesson: —.
