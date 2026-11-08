@@ -87,6 +87,18 @@ Every decision is checked in plain Python (`src/agentic_ticket_workflow/rules.py
 - The wait lasts at most 24 h from entering `awaiting_approval`. It is a durable Temporal timer, so the deadline survives worker restarts. With no answer by then, the ticket is escalated with `approval_timeout`. An answer counts only if the workflow processes it before the deadline. The validator also checks the deadline itself, so an approval queued while the worker was down and delivered after the deadline gets `409`, even though Temporal runs it before the overdue timer. An approval accepted before the deadline is always honoured.
 - Limits: a refund of an unpaid invoice passes the rules, and so does a refund of the same invoice in full from two tickets. The person who decides on the refund is the only guard there.
 
+### Errors a retry can't fix
+
+Some tickets can't be decided at all. Those tickets are escalated with a reason code instead of being retried forever, so a person always sees them. In `GET /tickets/{id}` they show `"decision": null` and `result.action` `{"type": "escalate", "reason": "<code>"}`.
+
+| Code | When |
+| --- | --- |
+| `unknown_customer` | the ticket's customer doesn't exist (T-7). Checked in code before the model is called, so `decide` is not retried. |
+| `unreadable_model_answer` | the model's answer is still unusable after 3 `decide` attempts: it doesn't parse as a decision, a tool call is malformed, or no decision comes within the 6-step tool loop. |
+| `llm_unavailable` | the model provider is still failing after 3 `decide` attempts, or the last attempt hit the 60 s `decide` timeout. |
+
+`decide` is retried up to 3 times in all, with backoff (1 s, then 2 s), because a model may answer properly, or a provider may recover, on the next try. The limit is fixed in code (`DECIDE_RETRY` in `workflow.py`). Any other `decide` error, such as a bug in the code, still fails the ticket. The fake model never fails, so these two escalations are shown by the tests (`tests/test_workflow.py`), not in the compose demo.
+
 ## Tests
 
 ```sh

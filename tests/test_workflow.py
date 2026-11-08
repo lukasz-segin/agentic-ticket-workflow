@@ -8,11 +8,19 @@ from datetime import timedelta
 import pytest
 from temporalio import activity
 from temporalio.client import WorkflowFailureError, WorkflowHandle, WorkflowQueryFailedError, WorkflowUpdateFailedError
-from temporalio.exceptions import ApplicationError
+from temporalio.exceptions import (
+    ActivityError,
+    ApplicationError,
+    CancelledError,
+    RetryState,
+    TimeoutType,
+)
+from temporalio.exceptions import TimeoutError as ActivityTimeoutError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
 from agentic_ticket_workflow.activities import TicketActivities, check
+from agentic_ticket_workflow.agent import ModelUnavailable
 from agentic_ticket_workflow.fake_llm import FakeChatModel
 from agentic_ticket_workflow.helpdesk import FakeHelpdesk
 from agentic_ticket_workflow.models import (
@@ -31,8 +39,10 @@ from agentic_ticket_workflow.models import (
 )
 from agentic_ticket_workflow.workflow import (
     APPROVAL_TIMEOUT,
+    DECIDE_RETRY,
     NOT_AWAITING_APPROVAL,
     TicketWorkflow,
+    decide_error_code,
     ticket_id_from,
     workflow_id_for,
 )
@@ -407,6 +417,111 @@ async def test_disallowed_value_from_the_real_decide_activity_is_escalated(env, 
     assert status.violation == "priority_not_allowed"
     assert status.decision is None
     assert status.result.action == EscalateAction(reason="priority_not_allowed")
+
+
+class NotJsonModel:
+    """Always answers with text that isn't a decision."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, messages, tools):
+        self.calls += 1
+        return {"role": "assistant", "content": "not json", "tool_calls": None}
+
+
+class EndlessToolModel:
+    """Asks for a tool on every turn, so the loop never gets a decision within its step limit."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, messages, tools):
+        self.calls += 1
+        function = {"name": "search_kb", "arguments": json.dumps({"query": "password"})}
+        call = {"id": f"c{self.calls}", "type": "function", "function": function}
+        return {"role": "assistant", "content": None, "tool_calls": [call]}
+
+
+class DownModel:
+    """A provider that can't be reached."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def complete(self, messages, tools):
+        self.calls += 1
+        raise ModelUnavailable("connection refused")
+
+
+async def run_with_model(env: WorkflowEnvironment, ticket: Ticket, model) -> TicketStatus:
+    """Run the workflow through the real activities with the given model and a helpdesk that never fails."""
+    acts = TicketActivities(model, FakeHelpdesk(0.0))
+    task_queue = str(uuid.uuid4())
+    async with worker(env, task_queue, [acts.decide, check, acts.act]):
+        status = await env.client.execute_workflow(
+            TicketWorkflow.run, ticket, id=workflow_id_for(ticket.ticket_id), task_queue=task_queue
+        )
+    assert len(acts.helpdesk.performed) == 1
+    return status
+
+
+@pytest.mark.parametrize(
+    ("model", "calls_per_attempt", "code"),
+    [
+        (NotJsonModel(), 1, "unreadable_model_answer"),
+        (EndlessToolModel(), 6, "unreadable_model_answer"),  # over the 6-step limit on every attempt
+        (DownModel(), 1, "llm_unavailable"),
+    ],
+    ids=["not-json", "step-limit", "unavailable"],
+)
+async def test_model_failure_escalates_after_the_retry_limit(env, tickets, model, calls_per_attempt, code):
+    status = await run_with_model(env, tickets["T-1"], model)
+
+    assert model.calls == DECIDE_RETRY.maximum_attempts * calls_per_attempt  # retried, then given up
+    assert status.step == "done"
+    assert status.steps == ["received", "deciding", "acting", "done"]
+    assert status.decision is None
+    assert status.violation is None
+    assert status.tool_calls == []
+    assert status.result.action == EscalateAction(reason=code)
+
+
+def _decide_error(cause: BaseException) -> ActivityError:
+    """An `ActivityError` as the workflow sees it once `decide`'s retry policy stopped."""
+    err = ActivityError(
+        "activity failed",
+        scheduled_event_id=1,
+        started_event_id=2,
+        identity="test",
+        activity_type="decide",
+        activity_id="1",
+        retry_state=RetryState.MAXIMUM_ATTEMPTS_REACHED,
+    )
+    err.__cause__ = cause
+    return err
+
+
+# A decide timeout is tested at the mapping, not through a workflow run: the time-skipping test server
+# doesn't skip time while an activity is in flight, so three 60 s attempts took over 2 minutes of real time.
+@pytest.mark.parametrize(
+    ("cause", "code"),
+    [
+        (
+            ActivityTimeoutError("timed out", type=TimeoutType.START_TO_CLOSE, last_heartbeat_details=[]),
+            "llm_unavailable",
+        ),
+        (ApplicationError("x", type="llm_unavailable"), "llm_unavailable"),
+        (ApplicationError("x", type="unreadable_model_answer"), "unreadable_model_answer"),
+        (ApplicationError("x", type="unknown_customer", non_retryable=True), "unknown_customer"),
+        (ApplicationError("x", type="priority_not_allowed", non_retryable=True), "priority_not_allowed"),
+        (ApplicationError("x", type="KeyError"), None),  # a code bug still fails the ticket
+        (CancelledError("cancelled"), None),
+    ],
+    ids=["timeout", "unavailable", "unreadable", "unknown-customer", "disallowed-value", "bug", "cancelled"],
+)
+def test_decide_error_code(cause, code):
+    assert decide_error_code(_decide_error(cause)) == code
 
 
 async def test_unknown_customer_escalates_without_a_decision_or_retry(env, tickets):

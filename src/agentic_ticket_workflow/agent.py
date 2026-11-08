@@ -12,8 +12,15 @@ from agentic_ticket_workflow.tools import TOOL_SCHEMAS, get_customer, run_tool
 
 class ChatModel(Protocol):
     def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
-        """Return an OpenAI-shaped assistant message: {"role", "content", "tool_calls"}."""
+        """Return an OpenAI-shaped assistant message: {"role", "content", "tool_calls"}.
+
+        Raise `ModelUnavailable` when the provider can't answer (network, server or rate-limit errors),
+        so the ticket is escalated with `llm_unavailable` once the retries run out (FR-008)."""
         ...
+
+
+class ModelUnavailable(Exception):
+    """The model provider can't be reached or can't answer right now; a retry may succeed."""
 
 
 class UnreadableModelAnswer(Exception):

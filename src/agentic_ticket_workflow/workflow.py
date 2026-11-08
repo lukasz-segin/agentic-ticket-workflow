@@ -12,6 +12,7 @@ from datetime import timedelta
 from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ActivityError, ApplicationError
+from temporalio.exceptions import TimeoutError as ActivityTimeoutError
 
 with workflow.unsafe.imports_passed_through():
     from agentic_ticket_workflow import rules
@@ -39,10 +40,13 @@ ACT_RETRY = RetryPolicy(
 )
 
 
-# Non-retryable activity errors whose `ApplicationError.type` is one of these codes end in an
-# escalation with that code as the reason, instead of failing the ticket (FR-005, FR-008). S-07 adds more.
+# A `decide` error whose `ApplicationError.type` is one of these codes ends in an escalation with that
+# code as the reason, instead of failing the ticket (FR-005, FR-008). The workflow only sees the error once
+# the retry policy stops, so retryable codes (unreadable, unavailable) escalate after the last attempt.
 UNKNOWN_CUSTOMER = "unknown_customer"
-ESCALATE_ON_ERROR = frozenset({UNKNOWN_CUSTOMER}) | rules.ALLOWED_VALUE_CODES
+UNREADABLE_MODEL_ANSWER = "unreadable_model_answer"
+LLM_UNAVAILABLE = "llm_unavailable"
+ESCALATE_ON_ERROR = frozenset({UNKNOWN_CUSTOMER, UNREADABLE_MODEL_ANSWER, LLM_UNAVAILABLE}) | rules.ALLOWED_VALUE_CODES
 
 # The `ApplicationError.type` an approval is refused with when the ticket isn't waiting for one (API: 409).
 NOT_AWAITING_APPROVAL = "not_awaiting_approval"
@@ -65,6 +69,17 @@ def ticket_id_from(workflow_id: str) -> str | None:
     if not workflow_id.startswith(WORKFLOW_ID_PREFIX):
         return None
     return workflow_id.removeprefix(WORKFLOW_ID_PREFIX) or None
+
+
+def decide_error_code(err: ActivityError) -> str | None:
+    """The escalation reason for a `decide` failure, or `None` if the ticket should fail instead.
+
+    The cause is the last attempt's failure: a timeout there means the model never answered in time."""
+    if isinstance(err.cause, ActivityTimeoutError):
+        return LLM_UNAVAILABLE
+    if isinstance(err.cause, ApplicationError) and err.cause.type in ESCALATE_ON_ERROR:
+        return err.cause.type
+    return None
 
 
 # Our own logger (so LOG_LEVEL reaches it) wrapped in the SDK adapter: replay-safe, and the
@@ -99,8 +114,8 @@ class TicketWorkflow:
                 retry_policy=DECIDE_RETRY,
             )
         except ActivityError as err:
-            code = err.cause.type if isinstance(err.cause, ApplicationError) else None
-            if code is None or code not in ESCALATE_ON_ERROR:
+            code = decide_error_code(err)
+            if code is None:
                 raise
             # No decision: the decision and tool calls stay empty in the status.
             if code in rules.ALLOWED_VALUE_CODES:
