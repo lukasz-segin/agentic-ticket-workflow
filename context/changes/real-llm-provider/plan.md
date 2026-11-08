@@ -293,30 +293,30 @@ None. Tickets are unaffected: the workflow code and its command sequence don't c
 
 #### Automated
 
-- [x] 1.1 New adapter, config, activity, workflow and log tests pass
-- [x] 1.2 Full suite passes with no network and no key
-- [x] 1.3 Lint passes
-- [x] 1.4 Format passes
-- [x] 1.5 Only the adapter imports the SDK
+- [x] 1.1 New adapter, config, activity, workflow and log tests pass — bd2e091
+- [x] 1.2 Full suite passes with no network and no key — bd2e091
+- [x] 1.3 Lint passes — bd2e091
+- [x] 1.4 Format passes — bd2e091
+- [x] 1.5 Only the adapter imports the SDK — bd2e091
 
 #### Manual
 
-- [x] 1.6 Fake-mode compose still answers T-1 citing KB-1 and logs fake mode
-- [x] 1.7 Missing LLM_MODEL stops the worker with a named error while the API still serves
+- [x] 1.6 Fake-mode compose still answers T-1 citing KB-1 and logs fake mode — bd2e091
+- [x] 1.7 Missing LLM_MODEL stops the worker with a named error while the API still serves — bd2e091
 
 ### Phase 2: Docs and a real-model smoke run
 
 #### Automated
 
-- [ ] 2.1 Full suite still passes
-- [ ] 2.2 Lint passes
-- [ ] 2.3 Format passes
-- [ ] 2.4 .env.example holds no key
+- [x] 2.1 Full suite still passes
+- [x] 2.2 Lint passes
+- [x] 2.3 Format passes
+- [x] 2.4 .env.example holds no key
 
 #### Manual
 
-- [ ] 2.5 Real model: all 7 example tickets reach a final state
-- [ ] 2.6 T-6 under the real model never issues a refund
-- [ ] 2.7 T-7 escalates with unknown_customer without a model call
-- [ ] 2.8 Worker logs carry IDs and no ticket text, key, provider message or model output
-- [ ] 2.9 Wrong key escalates with llm_unavailable after one decide attempt
+- [x] 2.5 Real model: all 7 example tickets reach a final state
+- [x] 2.6 T-6 under the real model never issues a refund
+- [x] 2.7 T-7 escalates with unknown_customer without a model call
+- [x] 2.8 Worker logs carry IDs and no ticket text, key, provider message or model output
+- [x] 2.9 Wrong key escalates with llm_unavailable after one decide attempt
